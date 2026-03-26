@@ -54,12 +54,19 @@ jobs:
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "Bumping ${CURRENT} → ${VERSION}"
 
+          # Previous tag for changelog range
           PREV_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
           echo "prev_tag=${PREV_TAG}" >> "$GITHUB_OUTPUT"
 
+          # Update root crate version (first occurrence only)
           sed -i "0,/^version = \"${CURRENT}\"/s//version = \"${VERSION}\"/" Cargo.toml
+
+          # Update subcrate package versions (only the [package] version line)
+          # Uses sed address range: match from [package] to next blank/section line
           sed -i '/^\[package\]/,/^\[/{s/^version = "[0-9]*\.[0-9]*\.[0-9]*"/version = "'"${VERSION}"'"/}' crates/dravr-enforme-mcp/Cargo.toml
           sed -i '/^\[package\]/,/^\[/{s/^version = "[0-9]*\.[0-9]*\.[0-9]*"/version = "'"${VERSION}"'"/}' crates/dravr-enforme-server/Cargo.toml
+
+          # Update dependency version references in subcrates
           sed -i "s/dravr-enforme = { path = \"\.\.\/\.\.\", version = \"[^\"]*\"/dravr-enforme = { path = \"\.\.\/\.\.\", version = \"${VERSION}\"/" crates/dravr-enforme-mcp/Cargo.toml
           sed -i "s/dravr-enforme = { path = \"\.\.\/\.\.\", version = \"[^\"]*\"/dravr-enforme = { path = \"\.\.\/\.\.\", version = \"${VERSION}\"/" crates/dravr-enforme-server/Cargo.toml
           sed -i "s/dravr-enforme-mcp = { path = \"\.\.\/dravr-enforme-mcp\", version = \"[^\"]*\"/dravr-enforme-mcp = { path = \"\.\.\/dravr-enforme-mcp\", version = \"${VERSION}\"/" crates/dravr-enforme-server/Cargo.toml
@@ -117,6 +124,15 @@ jobs:
               echo ""
               echo -e "$BODY"
             } > CHANGELOG.md
+          fi
+
+      - name: Update README version
+        run: |
+          VERSION="${{ steps.bump.outputs.version }}"
+          MAJOR_MINOR="${VERSION%.*}"
+          if [ -f README.md ]; then
+            sed -i "s/dravr-enforme = { version = \"[0-9]*\.[0-9]*\"/dravr-enforme = { version = \"${MAJOR_MINOR}\"/" README.md
+            sed -i "s/dravr-enforme = \"[0-9]*\.[0-9]*\"/dravr-enforme = \"${MAJOR_MINOR}\"/" README.md
           fi
 
       - name: Commit, tag, push
@@ -190,6 +206,33 @@ jobs:
           name: dravr-enforme-${{ matrix.target }}
           path: dravr-enforme-v*.*
 
+  docker:
+    name: Docker Image
+    needs: version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v${{ needs.version.outputs.version }}
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ghcr.io/dravr-ai/dravr-enforme:${{ needs.version.outputs.version }}
+            ghcr.io/dravr-ai/dravr-enforme:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
   publish:
     name: Publish Release
     needs: [version, build]
@@ -231,3 +274,81 @@ jobs:
           name: v${{ needs.version.outputs.version }}
           body_path: CHANGELOG.md
           files: artifacts/*
+
+  update-homebrew:
+    name: Update Homebrew
+    needs: [version, build, publish]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout homebrew-tap
+        uses: actions/checkout@v4
+        with:
+          repository: dravr-ai/homebrew-tap
+          token: ${{ secrets.RELEASE_PAT }}
+
+      - name: Download artifacts for SHA computation
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          pattern: dravr-enforme-*
+          merge-multiple: true
+
+      - name: Update formula
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          SHA_ARM=$(shasum -a 256 artifacts/dravr-enforme-v${VERSION}-aarch64-apple-darwin.tar.gz | awk '{print $1}')
+          SHA_X86_MAC=$(shasum -a 256 artifacts/dravr-enforme-v${VERSION}-x86_64-apple-darwin.tar.gz | awk '{print $1}')
+          SHA_LINUX=$(shasum -a 256 artifacts/dravr-enforme-v${VERSION}-x86_64-unknown-linux-gnu.tar.gz | awk '{print $1}')
+
+          cat > Formula/dravr-enforme.rb <<FORMULA
+          # typed: false
+          # frozen_string_literal: true
+
+          class DravrRiviere < Formula
+            desc "Health data sync orchestrator — webhook-driven provider sync with cursor-based CDC"
+            homepage "https://github.com/dravr-ai/dravr-enforme"
+            version "${VERSION}"
+            license "Apache-2.0"
+
+            on_macos do
+              if Hardware::CPU.arm?
+                url "https://github.com/dravr-ai/dravr-enforme/releases/download/v#{version}/dravr-enforme-v#{version}-aarch64-apple-darwin.tar.gz"
+                sha256 "${SHA_ARM}"
+              else
+                url "https://github.com/dravr-ai/dravr-enforme/releases/download/v#{version}/dravr-enforme-v#{version}-x86_64-apple-darwin.tar.gz"
+                sha256 "${SHA_X86_MAC}"
+              end
+            end
+
+            on_linux do
+              url "https://github.com/dravr-ai/dravr-enforme/releases/download/v#{version}/dravr-enforme-v#{version}-x86_64-unknown-linux-gnu.tar.gz"
+              sha256 "${SHA_LINUX}"
+            end
+
+            def install
+              bin.install "dravr-enforme-server"
+              bin.install "dravr-enforme-mcp"
+            end
+
+            test do
+              assert_match version.to_s, shell_output("#{bin}/dravr-enforme-server --version")
+              assert_match version.to_s, shell_output("#{bin}/dravr-enforme-mcp --version")
+            end
+          end
+          FORMULA
+
+          # Remove leading whitespace from heredoc
+          sed -i 's/^          //' Formula/dravr-enforme.rb
+
+      - name: Commit and push
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Formula/dravr-enforme.rb
+          git commit -m "chore: bump dravr-enforme to v${VERSION}"
+          git push
