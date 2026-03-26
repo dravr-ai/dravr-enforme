@@ -1,0 +1,9 @@
+target/
+.git/
+.github/
+.githooks/
+.claude/
+.vscode/
+.idea/
+*.md
+!README.md

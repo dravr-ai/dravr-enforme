@@ -1,0 +1,233 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: 'Version bump type'
+        required: true
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+
+permissions:
+  contents: write
+  packages: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  version:
+    name: Bump Version & Tag
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.bump.outputs.version }}
+      prev_tag: ${{ steps.bump.outputs.prev_tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Bump version
+        id: bump
+        run: |
+          CURRENT=$(grep '^version = ' Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
+          IFS='.' read -r major minor patch <<< "$CURRENT"
+
+          case "${{ inputs.bump }}" in
+            major) major=$((major + 1)); minor=0; patch=0 ;;
+            minor) minor=$((minor + 1)); patch=0 ;;
+            patch) patch=$((patch + 1)) ;;
+          esac
+
+          VERSION="${major}.${minor}.${patch}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Bumping ${CURRENT} → ${VERSION}"
+
+          PREV_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          echo "prev_tag=${PREV_TAG}" >> "$GITHUB_OUTPUT"
+
+          sed -i "0,/^version = \"${CURRENT}\"/s//version = \"${VERSION}\"/" Cargo.toml
+          sed -i '/^\[package\]/,/^\[/{s/^version = "[0-9]*\.[0-9]*\.[0-9]*"/version = "'"${VERSION}"'"/}' crates/dravr-enforme-mcp/Cargo.toml
+          sed -i '/^\[package\]/,/^\[/{s/^version = "[0-9]*\.[0-9]*\.[0-9]*"/version = "'"${VERSION}"'"/}' crates/dravr-enforme-server/Cargo.toml
+          sed -i "s/dravr-enforme = { path = \"\.\.\/\.\.\", version = \"[^\"]*\"/dravr-enforme = { path = \"\.\.\/\.\.\", version = \"${VERSION}\"/" crates/dravr-enforme-mcp/Cargo.toml
+          sed -i "s/dravr-enforme = { path = \"\.\.\/\.\.\", version = \"[^\"]*\"/dravr-enforme = { path = \"\.\.\/\.\.\", version = \"${VERSION}\"/" crates/dravr-enforme-server/Cargo.toml
+          sed -i "s/dravr-enforme-mcp = { path = \"\.\.\/dravr-enforme-mcp\", version = \"[^\"]*\"/dravr-enforme-mcp = { path = \"\.\.\/dravr-enforme-mcp\", version = \"${VERSION}\"/" crates/dravr-enforme-server/Cargo.toml
+
+      - name: Update lockfile
+        run: cargo generate-lockfile
+
+      - name: Generate changelog
+        run: |
+          VERSION="${{ steps.bump.outputs.version }}"
+          PREV_TAG="${{ steps.bump.outputs.prev_tag }}"
+          DATE=$(date +%Y-%m-%d)
+
+          if [ -z "$PREV_TAG" ]; then
+            RANGE="HEAD"
+          else
+            RANGE="${PREV_TAG}..HEAD"
+          fi
+
+          FEATURES=""
+          FIXES=""
+          OTHER=""
+
+          while IFS= read -r msg; do
+            [ -z "$msg" ] && continue
+            case "$msg" in
+              feat:*|feat\(*) FEATURES="${FEATURES}- ${msg}\n" ;;
+              fix:*|fix\(*)   FIXES="${FIXES}- ${msg}\n" ;;
+              docs:*|chore:*|test:*|ci:*|release:*) ;;
+              *) OTHER="${OTHER}- ${msg}\n" ;;
+            esac
+          done < <(git log "${RANGE}" --pretty=format:"%s" --no-merges)
+
+          BODY=""
+          [ -n "$FEATURES" ] && BODY="${BODY}### Added\n\n${FEATURES}\n"
+          [ -n "$FIXES" ]    && BODY="${BODY}### Fixed\n\n${FIXES}\n"
+          [ -n "$OTHER" ]    && BODY="${BODY}### Other\n\n${OTHER}\n"
+
+          HEADER="## [${VERSION}] — ${DATE}"
+
+          if [ -f CHANGELOG.md ]; then
+            TMPFILE=$(mktemp)
+            echo "# Changelog" > "$TMPFILE"
+            echo "" >> "$TMPFILE"
+            echo "$HEADER" >> "$TMPFILE"
+            echo "" >> "$TMPFILE"
+            echo -e "$BODY" >> "$TMPFILE"
+            tail -n +2 CHANGELOG.md >> "$TMPFILE"
+            mv "$TMPFILE" CHANGELOG.md
+          else
+            {
+              echo "# Changelog"
+              echo ""
+              echo "$HEADER"
+              echo ""
+              echo -e "$BODY"
+            } > CHANGELOG.md
+          fi
+
+      - name: Commit, tag, push
+        run: |
+          VERSION="${{ steps.bump.outputs.version }}"
+          git add -A
+          git commit -m "release: v${VERSION}"
+          git tag "v${VERSION}"
+          git push origin main --tags
+
+  build:
+    name: Build (${{ matrix.target }})
+    needs: version
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            archive: tar.gz
+          - target: x86_64-apple-darwin
+            os: macos-14
+            archive: tar.gz
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            archive: tar.gz
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            archive: zip
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v${{ needs.version.outputs.version }}
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build release binaries
+        run: cargo build --release --workspace --target ${{ matrix.target }}
+
+      - name: Package (Unix)
+        if: matrix.archive == 'tar.gz'
+        run: |
+          VERSION="${{ needs.version.outputs.version }}"
+          TARGET="${{ matrix.target }}"
+          DIR="dravr-enforme-v${VERSION}-${TARGET}"
+          mkdir "$DIR"
+          cp "target/${TARGET}/release/dravr-enforme-mcp" "$DIR/"
+          cp "target/${TARGET}/release/dravr-enforme-server" "$DIR/"
+          tar czf "${DIR}.tar.gz" "$DIR"
+
+      - name: Package (Windows)
+        if: matrix.archive == 'zip'
+        shell: pwsh
+        run: |
+          $VERSION = "${{ needs.version.outputs.version }}"
+          $TARGET = "${{ matrix.target }}"
+          $DIR = "dravr-enforme-v${VERSION}-${TARGET}"
+          New-Item -ItemType Directory -Path $DIR
+          Copy-Item "target/${TARGET}/release/dravr-enforme-mcp.exe" "$DIR/"
+          Copy-Item "target/${TARGET}/release/dravr-enforme-server.exe" "$DIR/"
+          Compress-Archive -Path "$DIR/*" -DestinationPath "${DIR}.zip"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dravr-enforme-${{ matrix.target }}
+          path: dravr-enforme-v*.*
+
+  publish:
+    name: Publish Release
+    needs: [version, build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v${{ needs.version.outputs.version }}
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Publish to crates.io
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: |
+          cargo publish -p dravr-enforme || echo "dravr-enforme already published, continuing..."
+
+          echo "Waiting for crates.io to index dravr-enforme..."
+          sleep 30
+
+          cargo publish -p dravr-enforme-mcp || echo "dravr-enforme-mcp already published, continuing..."
+
+          echo "Waiting for crates.io to index dravr-enforme-mcp..."
+          sleep 30
+
+          cargo publish -p dravr-enforme-server || echo "dravr-enforme-server already published, continuing..."
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          pattern: dravr-enforme-*
+          merge-multiple: true
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ needs.version.outputs.version }}
+          name: v${{ needs.version.outputs.version }}
+          body_path: CHANGELOG.md
+          files: artifacts/*
