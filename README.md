@@ -42,7 +42,7 @@ Garmin and Strava use sciotte's authenticated browser session to scrape health d
 
 ```toml
 [dependencies]
-dravr-enforme = { version = "0.0", features = ["provider-whoop"] }
+dravr-enforme = { version = "0.1", features = ["provider-whoop"] }
 ```
 
 ```rust

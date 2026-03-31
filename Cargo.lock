@@ -640,7 +640,7 @@ dependencies = [
 
 [[package]]
 name = "dravr-enforme"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "async-trait",
  "axum",
@@ -662,7 +662,7 @@ dependencies = [
 
 [[package]]
 name = "dravr-enforme-mcp"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "clap",
  "dravr-enforme",
@@ -673,7 +673,7 @@ dependencies = [
 
 [[package]]
 name = "dravr-enforme-server"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "axum",
  "clap",
