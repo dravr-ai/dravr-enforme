@@ -1,18 +1,5 @@
 ## Git Workflow: NO Pull Requests
 
-
-## Mandatory Session Setup (ALL AI Agents)
-
-**Run these commands at the START OF EVERY SESSION:**
-
-```bash
-# 1. Initialize shared build config (required for validation)
-git submodule update --init --recursive
-
-# 2. Set git hooks
-git config core.hooksPath .build/hooks
-```
-
 ## Mandatory Pre-Push Validation
 
 **Before EVERY push, run:**
@@ -85,31 +72,6 @@ The backend is a Cargo workspace with 3 crates:
 - Last Writer Wins with timestamp for conflict resolution
 - Token bucket rate limiting per provider
 
-## Git Hooks - MANDATORY for ALL AI Agents
-
-**MANDATORY - Run this at the START OF EVERY SESSION:**
-```bash
-git config core.hooksPath .githooks
-```
-
-**NEVER use `--no-verify` when committing or pushing.** The hooks enforce:
-- SPDX license headers on all source files
-- Commit message format (max 2 lines, conventional commits)
-- No AI-generated commit signatures
-- No unauthorized root markdown files
-
-## Pre-Push Validation Workflow
-
-1. **Make your changes and commit**
-2. **Run validation before pushing:**
-   ```bash
-   ./scripts/pre-push-validate.sh
-   ```
-3. **Push:**
-   ```bash
-   git push
-   ```
-
 # Writing code
 
 - CRITICAL: NEVER USE --no-verify WHEN COMMITTING CODE
@@ -134,30 +96,13 @@ git config core.hooksPath .githooks
 - `panic!()` - Only in test assertions
 - `anyhow!()` - FORBIDDEN entirely
 
-## Required Pre-Commit Validation
+### Tiered Validation (During Development)
 
-### Tiered Validation Approach
-
-#### Tier 1: Quick Iteration (during development)
-```bash
-cargo fmt
-cargo check --quiet
-cargo test --test <test_file> <test_name_pattern> -- --nocapture
-```
-
-#### Tier 2: Pre-Commit (before committing)
-```bash
-cargo fmt
-cargo clippy -p dravr-enforme
-cargo test --test <test_file> <test_pattern> -- --nocapture
-```
-
-#### Tier 3: Full Validation (before merge only)
-```bash
-cargo fmt
-cargo clippy --workspace --all-targets
-cargo test --workspace
-```
+| Tier | When | Commands |
+|------|------|----------|
+| Quick | During dev iteration | `cargo check --quiet && cargo test --test <file> <pattern>` |
+| Pre-commit | Before each commit | `cargo fmt --all && cargo clippy -p <changed-crate>` |
+| Full | Before push (see above) | `cargo fmt + clippy + .build/validation/validate.sh` |
 
 ## Mandatory Session Startup Checklist
 
