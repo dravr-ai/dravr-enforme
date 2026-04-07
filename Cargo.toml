@@ -9,7 +9,7 @@ members = [".", "crates/dravr-enforme-mcp", "crates/dravr-enforme-server"]
 
 [package]
 name = "dravr-enforme"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 license = "Apache-2.0"
 description = "Health data sync orchestrator — webhook-driven provider sync with cursor-based CDC for the Dravr platform"
@@ -25,7 +25,7 @@ categories = ["science", "asynchronous"]
 
 [profile.release]
 lto = "thin"
-codegen-units = 1
+codegen-units = 16
 panic = "abort"
 strip = true
 
@@ -105,7 +105,7 @@ hex = { version = "0.4", optional = true }
 axum = { version = "0.8", default-features = false, optional = true }
 
 # Optional: sciotte browser scraping for Garmin/Strava (private repo)
-dravr-sciotte = { git = "https://github.com/dravr-ai/dravr-sciotte.git", tag = "v0.5.0", optional = true }
+dravr-sciotte = { git = "https://github.com/dravr-ai/dravr-sciotte.git", tag = "v0.5.6", optional = true }
 
 [features]
 default = []
