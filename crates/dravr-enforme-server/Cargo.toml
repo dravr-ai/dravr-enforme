@@ -6,7 +6,7 @@
 
 [package]
 name = "dravr-enforme-server"
-version = "0.1.0"
+version = "0.1.2"
 edition = "2021"
 license = "Apache-2.0"
 description = "Unified REST API + MCP server for dravr-enforme sync orchestrator"
@@ -25,8 +25,8 @@ name = "dravr-enforme-server"
 path = "src/main.rs"
 
 [dependencies]
-dravr-enforme = { path = "../..", version = "0.1.0" }
-dravr-enforme-mcp = { path = "../dravr-enforme-mcp", version = "0.1.0" }
+dravr-enforme = { path = "../..", version = "0.1.2" }
+dravr-enforme-mcp = { path = "../dravr-enforme-mcp", version = "0.1.2" }
 dravr-tronc = { version = "0.2", features = ["notifications"] }
 axum = "0.8"
 clap = { version = "4", features = ["derive"] }

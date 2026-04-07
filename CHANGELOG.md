@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.2] — 2026-04-07
+
+### Other
+
+- bump dravr-sciotte v0.5.0 → v0.5.6 (dedup chromiumoxide)
+
+
+
 ## [0.1.0] — 2026-03-31
 
 
