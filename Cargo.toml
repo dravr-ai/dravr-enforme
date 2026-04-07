@@ -98,7 +98,7 @@ http = "1"
 # Optional: provider implementations
 reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false, optional = true }
 ring = { version = "0.17", optional = true }
-rand = { version = "0.8", optional = true }
+rand = { version = "0.9", optional = true }
 hex = { version = "0.4", optional = true }
 
 # Optional: webhook handling needs axum types
