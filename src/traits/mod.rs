@@ -4,6 +4,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) 2026 dravr.ai
 
+use std::fmt;
 use std::sync::Arc;
 
 /// Hook called when a provider is connected or disconnected
@@ -50,8 +51,8 @@ pub struct SyncDeps {
     pub connections: Arc<dyn connection_store::UserConnectionStore>,
 }
 
-impl std::fmt::Debug for SyncDeps {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Debug for SyncDeps {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("SyncDeps").finish_non_exhaustive()
     }
 }

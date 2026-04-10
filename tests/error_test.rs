@@ -4,6 +4,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) 2026 dravr.ai
 
+use std::error::Error;
+
 use dravr_enforme::EnformeError;
 
 #[test]
@@ -95,7 +97,7 @@ fn store_error_displays_correctly() {
 
 #[test]
 fn enforme_error_implements_std_error() {
-    let err: Box<dyn std::error::Error> = Box::new(EnformeError::provider("test", "msg"));
+    let err: Box<dyn Error> = Box::new(EnformeError::provider("test", "msg"));
     assert!(!err.to_string().is_empty());
 }
 

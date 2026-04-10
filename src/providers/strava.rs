@@ -4,6 +4,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) 2026 dravr.ai
 
+use std::fmt;
+use std::sync::Arc;
+
 use async_trait::async_trait;
 use chrono::{NaiveDate, Utc};
 use dravr_equilibre::{
@@ -17,7 +20,6 @@ use dravr_sciotte::scraper::ChromeScraper;
 use dravr_sciotte::types::ActivityScraper;
 use dravr_sciotte::CachedScraper;
 use http::HeaderMap;
-use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::instrument;
 
@@ -66,8 +68,8 @@ impl Default for StravaSciotteProvider {
     }
 }
 
-impl std::fmt::Debug for StravaSciotteProvider {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Debug for StravaSciotteProvider {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("StravaSciotteProvider").finish()
     }
 }

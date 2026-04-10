@@ -4,6 +4,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) 2026 dravr.ai
 
+use std::cmp::Ordering;
+
 use dravr_equilibre::data_source::DeviceType;
 use dravr_equilibre::{DevicePriority, ProviderPriority};
 
@@ -23,9 +25,9 @@ pub fn should_replace(
 
     // Lower priority number = higher priority
     match new_device_priority.cmp(&existing_device_priority) {
-        std::cmp::Ordering::Less => true,
-        std::cmp::Ordering::Greater => false,
-        std::cmp::Ordering::Equal => {
+        Ordering::Less => true,
+        Ordering::Greater => false,
+        Ordering::Equal => {
             // Tiebreak by provider priority
             let existing_provider_priority = ProviderPriority::priority(existing_provider);
             let new_provider_priority = ProviderPriority::priority(new_provider);

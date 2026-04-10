@@ -14,6 +14,7 @@ use dravr_enforme::traits::recovery_store::RecoveryStore;
 use dravr_enforme::traits::sleep_store::SleepStore;
 use dravr_enforme::traits::sync_provider::SyncProvider;
 use dravr_enforme::traits::timeseries_store::TimeSeriesPointStore;
+use dravr_enforme::traits::SyncDeps;
 
 fn assert_send_sync<T: Send + Sync + ?Sized>() {}
 
@@ -69,7 +70,7 @@ fn on_connect_hook_is_send_sync() {
 
 #[test]
 fn sync_deps_is_send_sync() {
-    assert_send_sync::<dravr_enforme::traits::SyncDeps>();
+    assert_send_sync::<SyncDeps>();
 }
 
 // Verify trait objects can be stored in Arc

@@ -8,6 +8,7 @@
 pub mod validation;
 
 use std::collections::HashMap;
+use std::fmt;
 
 use http::HeaderMap;
 use tracing::instrument;
@@ -66,8 +67,8 @@ impl WebhookHandler {
     }
 }
 
-impl std::fmt::Debug for WebhookHandler {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Debug for WebhookHandler {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("WebhookHandler")
             .field("providers", &self.providers.keys().collect::<Vec<_>>())
             .finish()

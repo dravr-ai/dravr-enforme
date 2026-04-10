@@ -4,9 +4,13 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) 2026 dravr.ai
 
+use std::error::Error;
 use std::sync::Arc;
 
 use clap::{Parser, Subcommand};
+use dravr_tronc::mcp::transport::stdio;
+use dravr_tronc::server::tracing_init;
+use tokio::net::TcpListener;
 use tokio::sync::RwLock;
 use tracing::info;
 
@@ -57,10 +61,10 @@ enum Command {
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     let cli = Cli::parse();
 
-    dravr_tronc::server::tracing_init::init_with_notifications(&cli.transport);
+    tracing_init::init_with_notifications(&cli.transport);
 
     let state = Arc::new(RwLock::new(ServerState::new()));
     let tools = build_tool_registry();
@@ -81,7 +85,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             let host = cli.host.unwrap_or_else(|| DEFAULT_HOST.to_owned());
             let port = cli.port.unwrap_or(DEFAULT_PORT);
             if cli.transport == "stdio" {
-                dravr_tronc::mcp::transport::stdio::run(mcp_server).await?;
+                stdio::run(mcp_server).await?;
             } else {
                 serve_http(mcp_server, &host, port).await?;
             }
@@ -95,10 +99,10 @@ async fn serve_http(
     mcp_server: Arc<McpServer<ServerState>>,
     host: &str,
     port: u16,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<(), Box<dyn Error + Send + Sync>> {
     let app = build_router(mcp_server);
     let addr = format!("{host}:{port}");
-    let listener = tokio::net::TcpListener::bind(&addr).await?;
+    let listener = TcpListener::bind(&addr).await?;
 
     info!("dravr-enforme server listening on {addr}");
     info!("  Health: GET http://{addr}/health");

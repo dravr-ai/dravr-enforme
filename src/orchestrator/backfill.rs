@@ -4,6 +4,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) 2026 dravr.ai
 
+use std::slice;
+
 use tracing::{info, instrument, warn};
 
 use crate::error::EnformeResult;
@@ -115,7 +117,7 @@ async fn backfill_data_type(
                 for metric_batch in &batch.records {
                     total += deps
                         .time_series
-                        .store_continuous_metrics("default", std::slice::from_ref(metric_batch))
+                        .store_continuous_metrics("default", slice::from_ref(metric_batch))
                         .await?;
                 }
                 deps.cursors.update_cursor(&batch.cursor).await?;

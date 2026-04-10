@@ -11,6 +11,7 @@ use std::time::Duration;
 
 use chrono::{DateTime, Utc};
 use tokio::task::JoinHandle;
+use tokio::time::sleep;
 use tracing::{error, info, warn};
 
 use crate::orchestrator::SyncOrchestrator;
@@ -129,7 +130,7 @@ pub fn start(orchestrator: Arc<SyncOrchestrator>) -> JoinHandle<()> {
 
         loop {
             let sleep_duration = with_jitter(interval);
-            tokio::time::sleep(sleep_duration).await;
+            sleep(sleep_duration).await;
 
             for provider_name in orchestrator.provider_names() {
                 match orchestrator

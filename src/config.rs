@@ -4,7 +4,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) 2026 dravr.ai
 
-use crate::models::deletion::DeletionStrategy;
+use std::env;
+use std::str::FromStr;
+
+use crate::models::deletion::{DeletionPolicy, DeletionStrategy};
 
 /// Default number of days to backfill on initial connect.
 const DEFAULT_BACKFILL_DAYS: u32 = 30;
@@ -46,7 +49,7 @@ impl SyncConfig {
                 "ENFORME_MAX_CONCURRENT_SYNCS",
                 DEFAULT_MAX_CONCURRENT_SYNCS,
             ),
-            webhook_base_url: std::env::var("ENFORME_WEBHOOK_BASE_URL").ok(),
+            webhook_base_url: env::var("ENFORME_WEBHOOK_BASE_URL").ok(),
             deletion_strategy: parse_deletion_strategy(),
             tombstone_retention_days: parse_env(
                 "ENFORME_TOMBSTONE_RETENTION_DAYS",
@@ -57,8 +60,8 @@ impl SyncConfig {
 
     /// Build a `DeletionPolicy` from the current config.
     #[must_use]
-    pub fn deletion_policy(&self) -> crate::models::deletion::DeletionPolicy {
-        crate::models::deletion::DeletionPolicy {
+    pub fn deletion_policy(&self) -> DeletionPolicy {
+        DeletionPolicy {
             strategy: self.deletion_strategy.clone(),
             tombstone_retention_days: self.tombstone_retention_days,
         }
@@ -79,8 +82,8 @@ impl Default for SyncConfig {
 }
 
 /// Parse an environment variable with a default fallback.
-fn parse_env<T: std::str::FromStr>(key: &str, default: T) -> T {
-    std::env::var(key)
+fn parse_env<T: FromStr>(key: &str, default: T) -> T {
+    env::var(key)
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(default)
@@ -88,7 +91,7 @@ fn parse_env<T: std::str::FromStr>(key: &str, default: T) -> T {
 
 /// Parse the deletion strategy from the `ENFORME_DELETION_STRATEGY` env var.
 fn parse_deletion_strategy() -> DeletionStrategy {
-    match std::env::var("ENFORME_DELETION_STRATEGY")
+    match env::var("ENFORME_DELETION_STRATEGY")
         .unwrap_or_default()
         .to_lowercase()
         .as_str()

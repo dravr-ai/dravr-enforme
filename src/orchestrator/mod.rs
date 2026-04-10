@@ -12,6 +12,8 @@ pub mod dedup;
 pub mod scheduler;
 
 use std::collections::HashMap;
+use std::fmt;
+use std::slice;
 use std::sync::Arc;
 
 use dravr_equilibre::SyncResult;
@@ -20,6 +22,8 @@ use tracing::{info, instrument, warn};
 
 use crate::config::SyncConfig;
 use crate::error::{EnformeError, EnformeResult};
+use crate::models::connection::ProviderCredentials;
+use crate::models::cursor::SyncCursor;
 use crate::rate_limit::TokenBucket;
 use crate::traits::sync_provider::{DataType, SyncProvider};
 use crate::traits::SyncDeps;
@@ -213,9 +217,9 @@ impl SyncOrchestrator {
     async fn sync_data_type(
         &self,
         provider: &dyn SyncProvider,
-        creds: &crate::models::connection::ProviderCredentials,
+        creds: &ProviderCredentials,
         data_type: DataType,
-        cursor: Option<&crate::models::cursor::SyncCursor>,
+        cursor: Option<&SyncCursor>,
     ) -> EnformeResult<u32> {
         match data_type {
             DataType::Sleep => {
@@ -251,7 +255,7 @@ impl SyncOrchestrator {
                     total += self
                         .deps
                         .time_series
-                        .store_continuous_metrics("default", std::slice::from_ref(metric_batch))
+                        .store_continuous_metrics("default", slice::from_ref(metric_batch))
                         .await?;
                 }
                 self.deps.cursors.update_cursor(&batch.cursor).await?;
@@ -261,8 +265,8 @@ impl SyncOrchestrator {
     }
 }
 
-impl std::fmt::Debug for SyncOrchestrator {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Debug for SyncOrchestrator {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("SyncOrchestrator")
             .field("providers", &self.providers.keys().collect::<Vec<_>>())
             .field("config", &self.config)

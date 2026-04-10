@@ -4,6 +4,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) 2026 dravr.ai
 
+use std::env;
+
 use async_trait::async_trait;
 use chrono::{DateTime, NaiveDate, Utc};
 use dravr_equilibre::{
@@ -40,7 +42,7 @@ impl WhoopProvider {
     pub fn new() -> Self {
         Self {
             client: reqwest::Client::new(),
-            webhook_secret: std::env::var("WHOOP_WEBHOOK_SECRET").ok(),
+            webhook_secret: env::var("WHOOP_WEBHOOK_SECRET").ok(),
         }
     }
 
