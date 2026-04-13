@@ -12,7 +12,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest]  # macos-latest disabled while repo is private (GitHub Free quota)
     runs-on: ${{ matrix.os }}
     steps:
       - name: Install from tap
