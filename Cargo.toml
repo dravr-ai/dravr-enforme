@@ -9,7 +9,7 @@ members = [".", "crates/dravr-enforme-mcp", "crates/dravr-enforme-server"]
 
 [package]
 name = "dravr-enforme"
-version = "0.1.3"
+version = "0.1.4"
 edition = "2021"
 license = "Apache-2.0"
 description = "Health data sync orchestrator — webhook-driven provider sync with cursor-based CDC for the Dravr platform"
@@ -102,7 +102,6 @@ http = "1"
 # Optional: provider implementations
 reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false, optional = true }
 ring = { version = "0.17", optional = true }
-rand = { version = "0.8", optional = true }
 hex = { version = "0.4", optional = true }
 
 # Optional: webhook handling needs axum types
@@ -114,7 +113,7 @@ dravr-sciotte = { git = "https://github.com/dravr-ai/dravr-sciotte.git", tag = "
 [features]
 default = []
 webhooks = ["dep:axum", "dep:hex"]
-provider-whoop = ["dep:reqwest", "dep:ring", "dep:rand", "webhooks"]
+provider-whoop = ["dep:reqwest", "dep:ring", "webhooks"]
 provider-garmin = ["dep:dravr-sciotte"]
 provider-strava = ["dep:dravr-sciotte"]
 all-providers = ["provider-whoop", "provider-garmin", "provider-strava"]
