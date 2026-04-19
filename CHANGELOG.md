@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.1.5] — 2026-04-19
+
+### Other
+
+- ci(release): inject RELEASE_PAT for private dravr-sciotte git dep cargo generate-lockfile needs auth to clone the private sciotte repo; GITHUB_TOKEN doesn't have access
+- chore(deps): remove dead rand dep, bump to v0.1.4 Closes transitive rand 0.8 Dependabot alert in dravr-platform
+
+
+
 ## [0.1.3] — 2026-04-10
 
 ### Other
