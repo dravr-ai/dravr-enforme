@@ -182,6 +182,10 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
+      - name: Configure git for private repo access
+        run: |
+          git config --global url."https://x-access-token:${{ secrets.RELEASE_PAT }}@github.com/".insteadOf "https://github.com/"
+
       - name: Build release binaries
         run: cargo build --release --workspace --target ${{ matrix.target }}
 
@@ -251,6 +255,10 @@ jobs:
           ref: v${{ needs.version.outputs.version }}
 
       - uses: dtolnay/rust-toolchain@stable
+
+      - name: Configure git for private repo access
+        run: |
+          git config --global url."https://x-access-token:${{ secrets.RELEASE_PAT }}@github.com/".insteadOf "https://github.com/"
 
       - name: Publish to crates.io
         env:
