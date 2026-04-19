@@ -71,6 +71,13 @@ jobs:
           sed -i "s/dravr-enforme = { path = \"\.\.\/\.\.\", version = \"[^\"]*\"/dravr-enforme = { path = \"\.\.\/\.\.\", version = \"${VERSION}\"/" crates/dravr-enforme-server/Cargo.toml
           sed -i "s/dravr-enforme-mcp = { path = \"\.\.\/dravr-enforme-mcp\", version = \"[^\"]*\"/dravr-enforme-mcp = { path = \"\.\.\/dravr-enforme-mcp\", version = \"${VERSION}\"/" crates/dravr-enforme-server/Cargo.toml
 
+      - name: Configure git for private repo access
+        # cargo generate-lockfile walks the dependency tree and clones git
+        # deps. `dravr-sciotte` is private, so the default GITHUB_TOKEN can't
+        # read it — rewrite HTTPS URLs to carry RELEASE_PAT.
+        run: |
+          git config --global url."https://x-access-token:${{ secrets.RELEASE_PAT }}@github.com/".insteadOf "https://github.com/"
+
       - name: Update lockfile
         run: cargo generate-lockfile
 
