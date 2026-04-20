@@ -106,8 +106,8 @@ fn with_jitter_stays_within_bounds() {
     for _ in 0..100 {
         let jittered = with_jitter(base);
         // Should be between 80% and 120% of base
-        assert!(jittered >= Duration::from_secs(80));
-        assert!(jittered <= Duration::from_secs(120));
+        assert!(jittered >= base * 80 / 100);
+        assert!(jittered <= base * 120 / 100);
     }
 }
 
