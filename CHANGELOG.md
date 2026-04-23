@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.6] — 2026-04-23
+
+### Fixed
+
+- fix(tests): express jitter bounds as proportions of base Sidesteps new Rust 1.95.0 clippy::duration_suboptimal_units pedantic lint on from_secs(120) and matches 80%/120%-of-base comment.
+
+
+
 ## [0.1.5] — 2026-04-19
 
 ### Other
