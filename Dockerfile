@@ -1,10 +1,16 @@
+# syntax=docker/dockerfile:1.4
 # ABOUTME: Multi-stage Docker build for dravr-enforme-server and dravr-enforme-mcp binaries
 # ABOUTME: Minimal runtime image for health data sync orchestrator
 
 FROM rust:1-bookworm AS builder
 WORKDIR /build
 COPY . .
-RUN cargo build --release -p dravr-enforme-server -p dravr-enforme-mcp
+# cargo build resolves the private dravr-sciotte git dep; receive the PAT as a
+# build secret and rewrite github.com HTTPS URLs so libgit2 can authenticate.
+RUN --mount=type=secret,id=git_token \
+    git config --global url."https://x-access-token:$(cat /run/secrets/git_token)@github.com/".insteadOf "https://github.com/" && \
+    cargo build --release -p dravr-enforme-server -p dravr-enforme-mcp && \
+    git config --global --unset url."https://x-access-token:$(cat /run/secrets/git_token)@github.com/".insteadOf
 
 FROM debian:bookworm-slim
 

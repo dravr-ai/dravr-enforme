@@ -239,6 +239,8 @@ jobs:
         with:
           context: .
           push: true
+          secrets: |
+            git_token=${{ secrets.RELEASE_PAT }}
           tags: |
             ghcr.io/dravr-ai/dravr-enforme:${{ needs.version.outputs.version }}
             ghcr.io/dravr-ai/dravr-enforme:latest

@@ -1,9 +1,17 @@
 version: 2
+registries:
+  dravr-private-git:
+    type: git
+    url: https://github.com
+    username: x-access-token
+    password: ${{ secrets.DRAVR_PRIVATE_DEPS_TOKEN }}
 updates:
   - package-ecosystem: "cargo"
     directory: "/"
     schedule:
       interval: "weekly"
+    registries:
+      - dravr-private-git
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
