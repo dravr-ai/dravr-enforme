@@ -9,7 +9,7 @@ members = [".", "crates/dravr-enforme-mcp", "crates/dravr-enforme-server"]
 
 [package]
 name = "dravr-enforme"
-version = "0.1.7"
+version = "0.1.8"
 edition = "2021"
 license = "Apache-2.0"
 description = "Health data sync orchestrator — webhook-driven provider sync with cursor-based CDC for the Dravr platform"
