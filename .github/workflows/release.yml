@@ -217,6 +217,7 @@ jobs:
         with:
           name: dravr-enforme-${{ matrix.target }}
           path: dravr-enforme-v*.*
+          retention-days: 7
 
   docker:
     name: Docker Image
