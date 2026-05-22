@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.1.12] — 2026-05-22
+
+### Other
+
+- deps: bump dravr-sciotte v0.5.14 -> v0.5.16 Matches the platform direct pin; v0.5.16 ships /challenge/dp digit scrape + Try-Another-Way debounce + stealth-JS-spoof removal that fix Strava-Google chooser surfacing and Garmin headless on Cloudflare.
+- ci(release): cap upload-artifact retention at 7d
+
+
+
 ## [0.1.11] — 2026-05-07
 
 
