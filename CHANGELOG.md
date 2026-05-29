@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.17] — 2026-05-29
+
+### Other
+
+- chore(deps): bump dravr-sciotte to v0.5.21 for real activity start_date Sync's Garmin/Strava scrape path now gets the true UTC start (was Utc::now/segment-effort time); also converges the platform on a single sciotte version.
+
+
+
 ## [0.1.16] — 2026-05-29
 
 
