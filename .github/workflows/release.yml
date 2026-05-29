@@ -212,12 +212,17 @@ jobs:
           Copy-Item "target/${TARGET}/release/dravr-enforme-server.exe" "$DIR/"
           Compress-Archive -Path "$DIR/*" -DestinationPath "${DIR}.zip"
 
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
+      - name: Attach binary to GitHub Release
+        # Attach directly to the GH Release (separate from the org Actions-artifact
+        # storage quota) instead of upload-artifact. softprops is idempotent per
+        # tag_name: the first matrix entry creates the release, others append.
+        uses: softprops/action-gh-release@v2
         with:
-          name: dravr-enforme-${{ matrix.target }}
-          path: dravr-enforme-v*.*
-          retention-days: 7
+          tag_name: v${{ needs.version.outputs.version }}
+          name: v${{ needs.version.outputs.version }}
+          body_path: CHANGELOG.md
+          files: dravr-enforme-v*.*
+          fail_on_unmatched_files: false
 
   docker:
     name: Docker Image
@@ -278,21 +283,6 @@ jobs:
           sleep 30
 
           cargo publish -p dravr-enforme-server || echo "dravr-enforme-server already published, continuing..."
-
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: artifacts
-          pattern: dravr-enforme-*
-          merge-multiple: true
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: v${{ needs.version.outputs.version }}
-          name: v${{ needs.version.outputs.version }}
-          body_path: CHANGELOG.md
-          files: artifacts/*
 
   update-homebrew:
     name: Update Homebrew
