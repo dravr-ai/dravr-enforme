@@ -2,7 +2,7 @@
 # ABOUTME: Multi-stage Docker build for dravr-enforme-server and dravr-enforme-mcp binaries
 # ABOUTME: Minimal runtime image for health data sync orchestrator
 
-FROM rust:1-bookworm AS builder
+FROM rust:1.96-bookworm AS builder
 WORKDIR /build
 COPY . .
 # cargo build resolves the private dravr-sciotte git dep; receive the PAT as a
