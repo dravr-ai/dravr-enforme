@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.23] — 2026-06-10
+
+### Other
+
+- chore(deps): bump dravr-sciotte v0.6.0 -> v0.7.0 sciotte v0.7.0 consolidates browser handling onto dravr-browser (crates.io); API unchanged for enforme. Keeps the platform able to converge on a single sciotte version.
+
+
+
 ## [0.1.22] — 2026-06-03
 
 
