@@ -469,6 +469,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "dravr-browser"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d4a18c606b3bdadd555313b91f201a4cbfb5ed21d1bd244e3c9076d76ba82a78"
+dependencies = [
+ "async-trait",
+ "chromiumoxide",
+ "chrono",
+ "futures",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "dravr-enforme"
 version = "0.1.22"
 dependencies = [
@@ -545,14 +562,15 @@ dependencies = [
 
 [[package]]
 name = "dravr-sciotte"
-version = "0.6.0"
-source = "git+https://github.com/dravr-ai/dravr-sciotte.git?tag=v0.6.0#22c8448585993622d2bac059b777a52b078f3585"
+version = "0.7.0"
+source = "git+https://github.com/dravr-ai/dravr-sciotte.git?tag=v0.7.0#c3c1f63da5637d98d770fdc07c4a7c170baa5c70"
 dependencies = [
  "async-trait",
  "base64",
  "chromiumoxide",
  "chrono",
  "dirs",
+ "dravr-browser",
  "futures",
  "moka",
  "reqwest 0.12.28",
