@@ -4,6 +4,13 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) 2026 dravr.ai
 
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::str_to_string
+)]
+
 use dravr_enforme::orchestrator::backfill::BackfillResult;
 use dravr_enforme::traits::sync_provider::DataType;
 

@@ -4,6 +4,13 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) 2026 dravr.ai
 
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::str_to_string
+)]
+
 use dravr_enforme::orchestrator::dedup::{select_best_source, should_replace};
 use dravr_equilibre::data_source::DeviceType;
 

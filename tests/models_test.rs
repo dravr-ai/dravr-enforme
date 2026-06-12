@@ -4,6 +4,13 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) 2026 dravr.ai
 
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::str_to_string
+)]
+
 use dravr_enforme::models::connection::{ConnectedUser, ProviderCredentials};
 use dravr_enforme::models::cursor::{SyncBatch, SyncCursor};
 use dravr_enforme::models::deletion::{DeletionPolicy, DeletionStrategy};
