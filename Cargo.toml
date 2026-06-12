@@ -16,6 +16,7 @@ description = "Health data sync orchestrator — webhook-driven provider sync wi
 repository = "https://github.com/dravr-ai/dravr-enforme"
 homepage = "https://github.com/dravr-ai/dravr-enforme"
 readme = "README.md"
+publish = false
 keywords = ["health", "sync", "webhooks", "wearables", "cdc"]
 categories = ["science", "asynchronous"]
 

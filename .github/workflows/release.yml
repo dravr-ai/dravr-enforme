@@ -253,40 +253,13 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  publish:
-    name: Publish Release
-    needs: [version, build]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: v${{ needs.version.outputs.version }}
-
-      - uses: dtolnay/rust-toolchain@1.96.0
-
-      - name: Configure git for private repo access
-        run: |
-          git config --global url."https://x-access-token:${{ secrets.RELEASE_PAT }}@github.com/".insteadOf "https://github.com/"
-
-      - name: Publish to crates.io
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-        run: |
-          cargo publish -p dravr-enforme || echo "dravr-enforme already published, continuing..."
-
-          echo "Waiting for crates.io to index dravr-enforme..."
-          sleep 30
-
-          cargo publish -p dravr-enforme-mcp || echo "dravr-enforme-mcp already published, continuing..."
-
-          echo "Waiting for crates.io to index dravr-enforme-mcp..."
-          sleep 30
-
-          cargo publish -p dravr-enforme-server || echo "dravr-enforme-server already published, continuing..."
+  # crates.io publishing removed: dravr-enforme's crates are private (`publish = false`).
+  # They must never reach the public registry. The platform consumes this repo via git
+  # tags, not crates.io versions (and these crates carry git deps that crates.io rejects).
 
   update-homebrew:
     name: Update Homebrew
-    needs: [version, build, publish]
+    needs: [version, build]
     if: false  # Disabled while repo is private: no macOS artifacts to checksum. Remove this line to restore.
     runs-on: ubuntu-latest
     permissions:
