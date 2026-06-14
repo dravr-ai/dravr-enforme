@@ -20,7 +20,7 @@ use dravr_sciotte::scraper::ChromeScraper;
 use dravr_sciotte::types::ActivityScraper;
 use dravr_sciotte::CachedScraper;
 use http::HeaderMap;
-use tokio::sync::RwLock;
+use tokio::sync::{OnceCell, RwLock};
 use tracing::instrument;
 
 use crate::error::{EnformeError, EnformeResult};
@@ -34,23 +34,47 @@ use crate::traits::sync_provider::{DataType, SyncProvider};
 /// Strava provides Fitness & Freshness (TSB) data: fitness score (CTL),
 /// fatigue score (ATL), form score (TSB), and FTP. No sleep or body composition.
 pub struct StravaSciotteProvider {
-    scraper: Arc<CachedScraper<ChromeScraper>>,
+    scraper: OnceCell<Arc<CachedScraper<ChromeScraper>>>,
     session: RwLock<Option<AuthSession>>,
 }
 
 impl StravaSciotteProvider {
     /// Create a new Strava provider with default sciotte configuration.
+    ///
+    /// The scraper is built lazily on first use so construction stays
+    /// infallible: the embedded provider config now parses to a `Result`
+    /// (sciotte denies `expect`/`unwrap`), and that parse is deferred to
+    /// [`Self::scraper`] where the error joins the fallible fetch path.
     #[must_use]
     pub fn new() -> Self {
-        let scraper_config = ScraperConfig::default();
-        let provider_config = ProviderConfig::strava_default();
-        let chrome = ChromeScraper::new(scraper_config, provider_config);
-        let cached = CachedScraper::new(chrome, &CacheConfig::default());
-
         Self {
-            scraper: Arc::new(cached),
+            scraper: OnceCell::new(),
             session: RwLock::new(None),
         }
+    }
+
+    /// Lazily build (once) and return the shared sciotte scraper.
+    ///
+    /// # Errors
+    ///
+    /// Returns a `ProviderError` if the embedded Strava scraper config fails to
+    /// parse — a compile-time constant validated by sciotte's own tests, so
+    /// this is a should-never-happen surfaced rather than panicked.
+    async fn scraper(&self) -> EnformeResult<&Arc<CachedScraper<ChromeScraper>>> {
+        self.scraper
+            .get_or_try_init(|| async {
+                let provider_config =
+                    ProviderConfig::strava_default().map_err(|e| EnformeError::ProviderError {
+                        provider: "strava".to_owned(),
+                        message: format!("Failed to build sciotte provider config: {e}"),
+                    })?;
+                let chrome = ChromeScraper::new(ScraperConfig::default(), provider_config);
+                Ok(Arc::new(CachedScraper::new(
+                    chrome,
+                    &CacheConfig::default(),
+                )))
+            })
+            .await
     }
 
     /// Restore the browser session from credentials.
@@ -123,7 +147,8 @@ impl SyncProvider for StravaSciotteProvider {
 
         let params = HealthParams { date };
         let summary = self
-            .scraper
+            .scraper()
+            .await?
             .get_daily_summary(&session, &params)
             .await
             .map_err(|e| EnformeError::ProviderError {
