@@ -78,12 +78,48 @@ impl GarminSciotteProvider {
             .await
     }
 
-    /// Restore the browser session from credentials.
-    fn restore_session(creds: &ProviderCredentials) -> EnformeResult<AuthSession> {
-        serde_json::from_str(&creds.access_token).map_err(|e| EnformeError::ProviderError {
-            provider: "garmin".to_owned(),
-            message: format!("Failed to deserialize sciotte session: {e}"),
-        })
+    /// Restore the browser session from credentials, or `None` when the stored
+    /// blob isn't a usable sciotte session.
+    ///
+    /// Garmin health is scraped, so it needs a sciotte browser session. A user
+    /// connected only via OAuth has an OAuth token (not a session JSON) in this
+    /// slot; deserialization then fails on every sync cycle. Treat that as "not
+    /// connected via the scraper" and skip rather than erroring repeatedly — a
+    /// genuine scrape/login failure surfaces elsewhere.
+    fn restore_session(creds: &ProviderCredentials) -> Option<AuthSession> {
+        match serde_json::from_str(&creds.access_token) {
+            Ok(session) => Some(session),
+            Err(e) => {
+                tracing::debug!(
+                    provider = "garmin",
+                    error = %e,
+                    "No usable sciotte session for Garmin health sync — skipping"
+                );
+                None
+            }
+        }
+    }
+
+    /// An empty, completed sync batch for `data_type` — returned when there is
+    /// no usable sciotte session so the orchestrator records a clean skip
+    /// instead of a recurring error.
+    fn empty_skip_batch<T>(data_type: &str) -> SyncBatch<T> {
+        SyncBatch {
+            records: Vec::new(),
+            cursor: SyncCursor {
+                user_id: String::new(),
+                provider: "garmin".to_owned(),
+                data_type: data_type.to_owned(),
+                value: Utc::now().date_naive().to_string(),
+                last_sync_at: Utc::now(),
+                status: SyncStatus::Completed,
+                records_synced: 0,
+                error_message: None,
+                retry_count: 0,
+                next_retry_at: None,
+            },
+            has_more: false,
+        }
     }
 
     /// Fetch daily summaries for a date range, one day at a time.
@@ -147,7 +183,9 @@ impl SyncProvider for GarminSciotteProvider {
         creds: &ProviderCredentials,
         cursor: Option<&SyncCursor>,
     ) -> EnformeResult<SyncBatch<StoredSleepSession>> {
-        let session = Self::restore_session(creds)?;
+        let Some(session) = Self::restore_session(creds) else {
+            return Ok(Self::empty_skip_batch("sleep"));
+        };
         *self.session.write().await = Some(session.clone());
 
         let start = cursor
@@ -188,7 +226,9 @@ impl SyncProvider for GarminSciotteProvider {
         creds: &ProviderCredentials,
         cursor: Option<&SyncCursor>,
     ) -> EnformeResult<SyncBatch<StoredRecoveryMetrics>> {
-        let session = Self::restore_session(creds)?;
+        let Some(session) = Self::restore_session(creds) else {
+            return Ok(Self::empty_skip_batch("recovery"));
+        };
         *self.session.write().await = Some(session.clone());
 
         let start = cursor
@@ -226,7 +266,9 @@ impl SyncProvider for GarminSciotteProvider {
         creds: &ProviderCredentials,
         cursor: Option<&SyncCursor>,
     ) -> EnformeResult<SyncBatch<StoredHealthMetrics>> {
-        let session = Self::restore_session(creds)?;
+        let Some(session) = Self::restore_session(creds) else {
+            return Ok(Self::empty_skip_batch("health"));
+        };
         *self.session.write().await = Some(session.clone());
 
         let start = cursor
