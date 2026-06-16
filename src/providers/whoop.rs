@@ -1,4 +1,4 @@
-// ABOUTME: WHOOP API v1 provider implementation for sleep, recovery, and health data
+// ABOUTME: WHOOP API v2 provider implementation for sleep, recovery, and health data
 // ABOUTME: Supports paginated fetch, webhook registration, and HMAC-SHA256 validation
 //
 // SPDX-License-Identifier: Apache-2.0
@@ -23,13 +23,13 @@ use crate::models::webhook::{WebhookAlgorithm, WebhookConfig, WebhookEvent};
 use crate::traits::sync_provider::{DataType, SyncProvider};
 use crate::webhook::validation;
 
-/// WHOOP API base URL.
-const WHOOP_API_BASE: &str = "https://api.prod.whoop.com/developer/v1";
+/// WHOOP API base URL (v2). The v1 API is no longer supported by WHOOP.
+const WHOOP_API_BASE: &str = "https://api.prod.whoop.com/developer/v2";
 
 /// WHOOP webhook signature header.
 const WHOOP_SIGNATURE_HEADER: &str = "x-whoop-signature";
 
-/// WHOOP API v1 provider implementation.
+/// WHOOP API v2 provider implementation.
 #[derive(Debug)]
 pub struct WhoopProvider {
     client: reqwest::Client,
@@ -75,33 +75,25 @@ impl WhoopProvider {
                 let start = s.start.parse::<DateTime<Utc>>().ok()?;
                 let end = s.end.parse::<DateTime<Utc>>().ok()?;
 
+                let stage_summary = s.score.as_ref().and_then(|sc| sc.stage_summary.as_ref());
+
                 Some(StoredSleepSession {
-                    id: s.id.to_string(),
+                    id: s.id.clone(),
                     user_id: user_id.to_owned(),
                     data_source_id: data_source_id.to_owned(),
                     is_nap: s.nap,
                     start_datetime: start,
                     end_datetime: end,
-                    total_sleep_seconds: s
-                        .score
-                        .as_ref()
-                        .and_then(|sc| sc.total_in_bed_time_milli.map(|ms| (ms / 1000) as u32)),
-                    deep_sleep_seconds: s
-                        .score
-                        .as_ref()
-                        .and_then(|sc| sc.slow_wave_sleep_time_milli.map(|ms| (ms / 1000) as u32)),
-                    light_sleep_seconds: s
-                        .score
-                        .as_ref()
-                        .and_then(|sc| sc.light_sleep_time_milli.map(|ms| (ms / 1000) as u32)),
-                    rem_sleep_seconds: s
-                        .score
-                        .as_ref()
-                        .and_then(|sc| sc.rem_sleep_time_milli.map(|ms| (ms / 1000) as u32)),
-                    awake_seconds: s
-                        .score
-                        .as_ref()
-                        .and_then(|sc| sc.wake_time_milli.map(|ms| (ms / 1000) as u32)),
+                    total_sleep_seconds: stage_summary
+                        .and_then(|sum| sum.in_bed.map(|ms| (ms / 1000) as u32)),
+                    deep_sleep_seconds: stage_summary
+                        .and_then(|sum| sum.slow_wave.map(|ms| (ms / 1000) as u32)),
+                    light_sleep_seconds: stage_summary
+                        .and_then(|sum| sum.light.map(|ms| (ms / 1000) as u32)),
+                    rem_sleep_seconds: stage_summary
+                        .and_then(|sum| sum.rem.map(|ms| (ms / 1000) as u32)),
+                    awake_seconds: stage_summary
+                        .and_then(|sum| sum.awake.map(|ms| (ms / 1000) as u32)),
                     sleep_efficiency: s
                         .score
                         .as_ref()
@@ -262,7 +254,7 @@ impl SyncProvider for WhoopProvider {
         creds: &ProviderCredentials,
         _cursor: Option<&SyncCursor>,
     ) -> EnformeResult<SyncBatch<StoredHealthMetrics>> {
-        let request = self.authorized_get("/body_measurement", creds);
+        let request = self.authorized_get("/user/measurement/body", creds);
 
         let response: WhoopBodyMeasurement = request
             .send()
@@ -380,7 +372,7 @@ impl SyncProvider for WhoopProvider {
             "whoop",
             &payload.event_type,
             payload.user_id.to_string(),
-            payload.id.to_string(),
+            payload.id.clone(),
         )])
     }
 }
@@ -397,7 +389,8 @@ struct WhoopPaginatedResponse<T> {
 
 #[derive(Debug, Deserialize)]
 struct WhoopSleep {
-    id: u64,
+    // v2 sleep ids are UUID strings, not the v1 integer ids.
+    id: String,
     start: String,
     end: String,
     nap: bool,
@@ -406,13 +399,26 @@ struct WhoopSleep {
 
 #[derive(Debug, Deserialize)]
 struct WhoopSleepScore {
-    total_in_bed_time_milli: Option<i64>,
-    slow_wave_sleep_time_milli: Option<i64>,
-    light_sleep_time_milli: Option<i64>,
-    rem_sleep_time_milli: Option<i64>,
-    wake_time_milli: Option<i64>,
+    // v2 nests per-stage durations under stage_summary with total_-prefixed names.
+    stage_summary: Option<WhoopSleepStageSummary>,
     sleep_efficiency_percentage: Option<f64>,
     sleep_performance_percentage: Option<f64>,
+}
+
+/// Per-stage sleep durations from a v2 sleep score. All values are totals in
+/// milliseconds; the wire names carry the `total_*_time_milli` form.
+#[derive(Debug, Deserialize)]
+struct WhoopSleepStageSummary {
+    #[serde(rename = "total_in_bed_time_milli")]
+    in_bed: Option<i64>,
+    #[serde(rename = "total_slow_wave_sleep_time_milli")]
+    slow_wave: Option<i64>,
+    #[serde(rename = "total_light_sleep_time_milli")]
+    light: Option<i64>,
+    #[serde(rename = "total_rem_sleep_time_milli")]
+    rem: Option<i64>,
+    #[serde(rename = "total_awake_time_milli")]
+    awake: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -441,5 +447,7 @@ struct WhoopWebhookPayload {
     #[serde(rename = "type")]
     event_type: String,
     user_id: u64,
-    id: u64,
+    // v2 webhook ids are strings: activity (sleep/workout) events and recovery
+    // events carry the UUID of the associated sleep.
+    id: String,
 }
