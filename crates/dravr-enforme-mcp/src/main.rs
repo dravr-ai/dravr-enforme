@@ -12,7 +12,6 @@ use clap::Parser;
 use dravr_tronc::mcp::transport::{http, stdio};
 use dravr_tronc::server::cli::McpArgs;
 use dravr_tronc::server::tracing_init;
-use tokio::sync::RwLock;
 use tracing::info;
 
 use dravr_enforme_mcp::state::ServerState;
@@ -31,7 +30,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
 
     tracing_init::init(&cli.server.transport);
 
-    let state = Arc::new(RwLock::new(ServerState::new()));
+    let state = Arc::new(ServerState::new());
     let tools = build_tool_registry();
     let server = Arc::new(McpServer::new(
         "dravr-enforme-mcp",

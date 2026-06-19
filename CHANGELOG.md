@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.32] — 2026-06-19
+
+### Changed
+
+- deps: migrate `dravr-enforme-mcp` and `dravr-enforme-server` to dravr-tronc
+  0.5.3 (dual-era MCP engine); state is `Arc<S>` directly (tronc no longer wraps
+  it in a `RwLock`). The core `dravr-enforme` crate is unchanged.
+
 ## [0.1.23] — 2026-06-10
 
 ### Other
