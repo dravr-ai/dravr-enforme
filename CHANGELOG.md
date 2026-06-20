@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.1.33] — 2026-06-19
+
+### Changed
+
+- deps: align internal satellite pins to the tronc-0.5.3 fleet release —
+  `dravr-equilibre` v0.2.3→v0.2.4, `dravr-riviere` v0.2.3→v0.2.4,
+  `dravr-sciotte` v0.7.5→v0.7.6. Keeps a single resolved version of each shared
+  crate when the platform consumes enforme alongside its direct pins (no
+  functional change; those cores are unchanged).
+
 ## [0.1.32] — 2026-06-19
 
 ### Changed
