@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.1.34] — 2026-06-22
+
+### Changed
+
+- deps: bump `dravr-sciotte` v0.7.6→v0.7.7 (Strava training-log interval-feed
+  date-jump pagination + locale-correct decimal parsing). Keeps enforme's
+  `dravr-sciotte` on the same resolved version the platform's direct pins now
+  use, so the fleet converges on one sciotte (no functional change here — the
+  core enforme crate is unchanged; the scraper improvement ships in sciotte).
+
 ## [0.1.33] — 2026-06-19
 
 ### Changed
