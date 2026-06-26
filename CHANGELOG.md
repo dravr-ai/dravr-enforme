@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.1.35] — 2026-06-26
+
+### Changed
+
+- deps: bump `dravr-sciotte` v0.7.7 → v0.7.8 (distance values from the Strava
+  training-log interval feed now strip the `<abbr>` unit wrapper before parsing,
+  fixing km/meters mis-scaling). Keeps the platform lock on a single sciotte
+  version. No enforme API change.
+
 ## [0.1.34] — 2026-06-22
 
 ### Changed
