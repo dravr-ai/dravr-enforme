@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.1.36] — 2026-06-26
+
+### Changed
+
+- deps: bump `dravr-sciotte` v0.7.8 → v0.7.9 (restores the Garmin activity
+  scrape — the dravr-browser capture map moved responses under `.byUrl` with the
+  body in `chunks[]`, which Garmin's passive-capture `js_extract` no longer read,
+  so it scraped 0 activities; v0.7.9 reads both shapes and adds
+  `SportType::from_garmin` so Garmin typeKeys stop bucketing as `Other`).
+
 ## [0.1.35] — 2026-06-26
 
 ### Changed
