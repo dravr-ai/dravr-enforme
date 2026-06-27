@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.1.37] — 2026-06-26
+
+### Changed
+
+- deps: bump `dravr-sciotte` v0.7.9 → v0.7.10 (Strava interval-feed now reads the
+  canonical numeric `a.distance` in meters instead of the formatted stat value,
+  fixing the 2024 "0.0X km" distance bug). Keeps the platform sciotte lock on a
+  single version.
+
 ## [0.1.36] — 2026-06-26
 
 ### Changed
