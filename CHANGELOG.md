@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.39] — 2026-06-30
+
+### Changed
+
+- deps: bump `dravr-sciotte` v0.7.11 → v0.7.12 (credential-login observability —
+  page-navigation breadcrumbs, no-navigation stall warnings, and the last page
+  named in the timeout error). Keeps the platform sciotte lock on one version.
+
 ## [0.1.37] — 2026-06-26
 
 ### Changed
