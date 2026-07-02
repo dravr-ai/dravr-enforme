@@ -103,11 +103,11 @@ impl GarminSciotteProvider {
     /// An empty, completed sync batch for `data_type` — returned when there is
     /// no usable sciotte session so the orchestrator records a clean skip
     /// instead of a recurring error.
-    fn empty_skip_batch<T>(data_type: &str) -> SyncBatch<T> {
+    fn empty_skip_batch<T>(user_id: &str, data_type: &str) -> SyncBatch<T> {
         SyncBatch {
             records: Vec::new(),
             cursor: SyncCursor {
-                user_id: String::new(),
+                user_id: user_id.to_owned(),
                 provider: "garmin".to_owned(),
                 data_type: data_type.to_owned(),
                 value: Utc::now().date_naive().to_string(),
@@ -184,7 +184,7 @@ impl SyncProvider for GarminSciotteProvider {
         cursor: Option<&SyncCursor>,
     ) -> EnformeResult<SyncBatch<StoredSleepSession>> {
         let Some(session) = Self::restore_session(creds) else {
-            return Ok(Self::empty_skip_batch("sleep"));
+            return Ok(Self::empty_skip_batch(&creds.user_id, "sleep"));
         };
         *self.session.write().await = Some(session.clone());
 
@@ -197,11 +197,11 @@ impl SyncProvider for GarminSciotteProvider {
         let records: Vec<StoredSleepSession> = summaries
             .iter()
             .filter(|s| s.sleep_duration_seconds.is_some())
-            .map(|s| summary_to_sleep(s, &creds.access_token))
+            .map(|s| summary_to_sleep(s, &creds.user_id))
             .collect();
 
         let new_cursor = SyncCursor {
-            user_id: String::new(),
+            user_id: creds.user_id.clone(),
             provider: "garmin".to_owned(),
             data_type: "sleep".to_owned(),
             value: end.to_string(),
@@ -227,7 +227,7 @@ impl SyncProvider for GarminSciotteProvider {
         cursor: Option<&SyncCursor>,
     ) -> EnformeResult<SyncBatch<StoredRecoveryMetrics>> {
         let Some(session) = Self::restore_session(creds) else {
-            return Ok(Self::empty_skip_batch("recovery"));
+            return Ok(Self::empty_skip_batch(&creds.user_id, "recovery"));
         };
         *self.session.write().await = Some(session.clone());
 
@@ -237,11 +237,13 @@ impl SyncProvider for GarminSciotteProvider {
         let end = Utc::now().date_naive();
 
         let summaries = self.fetch_date_range(&session, start, end).await;
-        let records: Vec<StoredRecoveryMetrics> =
-            summaries.iter().map(summary_to_recovery).collect();
+        let records: Vec<StoredRecoveryMetrics> = summaries
+            .iter()
+            .map(|s| summary_to_recovery(s, &creds.user_id))
+            .collect();
 
         let new_cursor = SyncCursor {
-            user_id: String::new(),
+            user_id: creds.user_id.clone(),
             provider: "garmin".to_owned(),
             data_type: "recovery".to_owned(),
             value: end.to_string(),
@@ -267,7 +269,7 @@ impl SyncProvider for GarminSciotteProvider {
         cursor: Option<&SyncCursor>,
     ) -> EnformeResult<SyncBatch<StoredHealthMetrics>> {
         let Some(session) = Self::restore_session(creds) else {
-            return Ok(Self::empty_skip_batch("health"));
+            return Ok(Self::empty_skip_batch(&creds.user_id, "health"));
         };
         *self.session.write().await = Some(session.clone());
 
@@ -280,11 +282,11 @@ impl SyncProvider for GarminSciotteProvider {
         let records: Vec<StoredHealthMetrics> = summaries
             .iter()
             .filter(|s| s.vo2_max.is_some() || s.weight_kg.is_some())
-            .map(summary_to_health)
+            .map(|s| summary_to_health(s, &creds.user_id))
             .collect();
 
         let new_cursor = SyncCursor {
-            user_id: String::new(),
+            user_id: creds.user_id.clone(),
             provider: "garmin".to_owned(),
             data_type: "health".to_owned(),
             value: end.to_string(),
@@ -303,10 +305,10 @@ impl SyncProvider for GarminSciotteProvider {
         })
     }
 
-    #[instrument(skip(self, _creds), fields(provider = "garmin"))]
+    #[instrument(skip(self, creds), fields(provider = "garmin"))]
     async fn fetch_continuous(
         &self,
-        _creds: &ProviderCredentials,
+        creds: &ProviderCredentials,
         _cursor: Option<&SyncCursor>,
     ) -> EnformeResult<SyncBatch<ContinuousMetricBatch>> {
         // Garmin continuous metrics (HR, steps) are in the daily summary
@@ -314,7 +316,7 @@ impl SyncProvider for GarminSciotteProvider {
         Ok(SyncBatch {
             records: Vec::new(),
             cursor: SyncCursor {
-                user_id: String::new(),
+                user_id: creds.user_id.clone(),
                 provider: "garmin".to_owned(),
                 data_type: "continuous".to_owned(),
                 value: Utc::now().date_naive().to_string(),
@@ -370,7 +372,7 @@ impl SyncProvider for GarminSciotteProvider {
 // DailySummary → stored type conversions
 // ============================================================================
 
-fn summary_to_sleep(s: &DailySummary, data_source_id: &str) -> StoredSleepSession {
+fn summary_to_sleep(s: &DailySummary, user_id: &str) -> StoredSleepSession {
     let date_midnight = s
         .date
         .and_hms_opt(0, 0, 0)
@@ -385,9 +387,9 @@ fn summary_to_sleep(s: &DailySummary, data_source_id: &str) -> StoredSleepSessio
     let total_secs_signed = total_secs as i64;
 
     StoredSleepSession {
-        id: format!("garmin-sleep-{}", s.date),
-        user_id: String::new(),
-        data_source_id: data_source_id.to_owned(),
+        id: format!("garmin-sleep-{}-{}", user_id, s.date),
+        user_id: user_id.to_owned(),
+        data_source_id: "garmin-default".to_owned(),
         is_nap: false,
         start_datetime: date_midnight,
         end_datetime: date_midnight + Duration::seconds(total_secs_signed),
@@ -410,11 +412,11 @@ fn summary_to_sleep(s: &DailySummary, data_source_id: &str) -> StoredSleepSessio
     }
 }
 
-fn summary_to_recovery(s: &DailySummary) -> StoredRecoveryMetrics {
+fn summary_to_recovery(s: &DailySummary, user_id: &str) -> StoredRecoveryMetrics {
     StoredRecoveryMetrics {
-        id: format!("garmin-recovery-{}", s.date),
-        user_id: String::new(),
-        data_source_id: String::new(),
+        id: format!("garmin-recovery-{}-{}", user_id, s.date),
+        user_id: user_id.to_owned(),
+        data_source_id: "garmin-default".to_owned(),
         date: s.date,
         recovery_score: s.body_battery,
         readiness_score: s.body_battery,
@@ -431,11 +433,11 @@ fn summary_to_recovery(s: &DailySummary) -> StoredRecoveryMetrics {
     }
 }
 
-fn summary_to_health(s: &DailySummary) -> StoredHealthMetrics {
+fn summary_to_health(s: &DailySummary, user_id: &str) -> StoredHealthMetrics {
     StoredHealthMetrics {
-        id: format!("garmin-health-{}", s.date),
-        user_id: String::new(),
-        data_source_id: String::new(),
+        id: format!("garmin-health-{}-{}", user_id, s.date),
+        user_id: user_id.to_owned(),
+        data_source_id: "garmin-default".to_owned(),
         date: s.date,
         weight_kg: s.weight_kg.map(f64::from),
         body_fat_pct: s.body_fat_percent.map(f64::from),

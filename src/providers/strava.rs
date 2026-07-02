@@ -124,14 +124,14 @@ impl SyncProvider for StravaSciotteProvider {
 
     async fn fetch_sleep(
         &self,
-        _creds: &ProviderCredentials,
+        creds: &ProviderCredentials,
         _cursor: Option<&SyncCursor>,
     ) -> EnformeResult<SyncBatch<StoredSleepSession>> {
         // Strava does not provide sleep data
         Ok(SyncBatch {
             records: Vec::new(),
             cursor: SyncCursor {
-                user_id: String::new(),
+                user_id: creds.user_id.clone(),
                 provider: "strava".to_owned(),
                 data_type: "sleep".to_owned(),
                 value: Utc::now().date_naive().to_string(),
@@ -157,7 +157,7 @@ impl SyncProvider for StravaSciotteProvider {
             return Ok(SyncBatch {
                 records: Vec::new(),
                 cursor: SyncCursor {
-                    user_id: String::new(),
+                    user_id: creds.user_id.clone(),
                     provider: "strava".to_owned(),
                     data_type: "recovery".to_owned(),
                     value: Utc::now().date_naive().to_string(),
@@ -189,13 +189,13 @@ impl SyncProvider for StravaSciotteProvider {
             })?;
 
         let records = if summary.fitness_score.is_some() || summary.form_score.is_some() {
-            vec![summary_to_recovery(&summary)]
+            vec![summary_to_recovery(&summary, &creds.user_id)]
         } else {
             Vec::new()
         };
 
         let new_cursor = SyncCursor {
-            user_id: String::new(),
+            user_id: creds.user_id.clone(),
             provider: "strava".to_owned(),
             data_type: "recovery".to_owned(),
             value: date.to_string(),
@@ -216,14 +216,14 @@ impl SyncProvider for StravaSciotteProvider {
 
     async fn fetch_health(
         &self,
-        _creds: &ProviderCredentials,
+        creds: &ProviderCredentials,
         _cursor: Option<&SyncCursor>,
     ) -> EnformeResult<SyncBatch<StoredHealthMetrics>> {
         // Strava does not provide body composition or health metrics
         Ok(SyncBatch {
             records: Vec::new(),
             cursor: SyncCursor {
-                user_id: String::new(),
+                user_id: creds.user_id.clone(),
                 provider: "strava".to_owned(),
                 data_type: "health".to_owned(),
                 value: Utc::now().date_naive().to_string(),
@@ -240,13 +240,13 @@ impl SyncProvider for StravaSciotteProvider {
 
     async fn fetch_continuous(
         &self,
-        _creds: &ProviderCredentials,
+        creds: &ProviderCredentials,
         _cursor: Option<&SyncCursor>,
     ) -> EnformeResult<SyncBatch<ContinuousMetricBatch>> {
         Ok(SyncBatch {
             records: Vec::new(),
             cursor: SyncCursor {
-                user_id: String::new(),
+                user_id: creds.user_id.clone(),
                 provider: "strava".to_owned(),
                 data_type: "continuous".to_owned(),
                 value: Utc::now().date_naive().to_string(),
@@ -297,17 +297,20 @@ impl SyncProvider for StravaSciotteProvider {
     }
 }
 
-/// Map Strava TSB data to recovery metrics.
-fn summary_to_recovery(s: &DailySummary) -> StoredRecoveryMetrics {
+/// Map Strava TSB data to recovery metrics for `user_id`.
+///
+/// The record id is user-scoped: the store's primary key is the id alone,
+/// so a date-only id would collide across users syncing the same day.
+fn summary_to_recovery(s: &DailySummary, user_id: &str) -> StoredRecoveryMetrics {
     // Map form_score (TSB, can be negative i32) to recovery/readiness (Option<u32>)
     // Clamp negative values to 0 since recovery scores are unsigned.
     #[allow(clippy::cast_sign_loss)]
     let form_as_u32 = s.form_score.map(|v| v.max(0) as u32);
 
     StoredRecoveryMetrics {
-        id: format!("strava-recovery-{}", s.date),
-        user_id: String::new(),
-        data_source_id: String::new(),
+        id: format!("strava-recovery-{}-{}", user_id, s.date),
+        user_id: user_id.to_owned(),
+        data_source_id: "strava-default".to_owned(),
         date: s.date,
         // Map Strava TSB: form_score (TSB) as recovery indicator
         recovery_score: form_as_u32,
