@@ -59,4 +59,31 @@ mod whoop_tests {
         let provider = WhoopProvider::with_config(client, Some("secret".to_owned()));
         assert_eq!(provider.name(), "whoop");
     }
+
+    #[test]
+    fn whoop_date_parses_well_formed_created_at() {
+        use chrono::NaiveDate;
+        use dravr_enforme::providers::whoop::parse_whoop_date;
+
+        let date = parse_whoop_date("2026-07-09T04:00:00.000Z");
+        assert_eq!(date, NaiveDate::from_ymd_opt(2026, 7, 9));
+    }
+
+    #[test]
+    fn whoop_date_short_created_at_returns_none_without_panic() {
+        use dravr_enforme::providers::whoop::parse_whoop_date;
+
+        // Fewer than 10 bytes: byte-slicing `&s[..10]` would panic here.
+        assert_eq!(parse_whoop_date("2026-07"), None);
+        assert_eq!(parse_whoop_date(""), None);
+    }
+
+    #[test]
+    fn whoop_date_multibyte_created_at_returns_none_without_panic() {
+        use dravr_enforme::providers::whoop::parse_whoop_date;
+
+        // A multibyte char straddling byte offset 10 is not a char boundary;
+        // slicing `&s[..10]` would panic. `str::get` yields None instead.
+        assert_eq!(parse_whoop_date("2026-07-0é9T00:00:00Z"), None);
+    }
 }

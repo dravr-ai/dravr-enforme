@@ -29,6 +29,17 @@ const WHOOP_API_BASE: &str = "https://api.prod.whoop.com/developer/v2";
 /// WHOOP webhook signature header.
 const WHOOP_SIGNATURE_HEADER: &str = "x-whoop-signature";
 
+/// Parse the leading `YYYY-MM-DD` date from a WHOOP `created_at` timestamp.
+///
+/// Returns `None` for strings shorter than 10 bytes, strings whose 10th byte
+/// is not a char boundary, or prefixes that are not a valid date. Uses
+/// `str::get` rather than slicing so a malformed provider payload yields
+/// `None` instead of panicking and unwinding the sync scheduler.
+#[must_use]
+pub fn parse_whoop_date(created_at: &str) -> Option<NaiveDate> {
+    NaiveDate::parse_from_str(created_at.get(..10)?, "%Y-%m-%d").ok()
+}
+
 /// WHOOP API v2 provider implementation.
 #[derive(Debug)]
 pub struct WhoopProvider {
@@ -122,7 +133,7 @@ impl WhoopProvider {
             .records
             .iter()
             .filter_map(|r| {
-                let date = NaiveDate::parse_from_str(&r.created_at[..10], "%Y-%m-%d").ok()?;
+                let date = parse_whoop_date(&r.created_at)?;
                 let recorded_at = r.created_at.parse::<DateTime<Utc>>().ok()?;
 
                 Some(StoredRecoveryMetrics {

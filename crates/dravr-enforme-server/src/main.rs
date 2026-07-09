@@ -4,6 +4,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) 2026 dravr.ai
 
+use std::env;
 use std::error::Error;
 use std::sync::Arc;
 
@@ -22,6 +23,30 @@ const DEFAULT_HOST: &str = "127.0.0.1";
 
 /// Default port for the HTTP server.
 const DEFAULT_PORT: u16 = 3300;
+
+/// Comma-separated `Origin` allowlist for the MCP HTTP transport.
+///
+/// tronc's transport rejects (403) any browser request whose `Origin` header is
+/// present and not on this list — DNS-rebinding protection. An empty/unset value
+/// leaves the allowlist empty, which tronc treats as "allow any origin"; set this
+/// in browser-facing deployments to restrict cross-origin POSTs to `/mcp`.
+/// Non-browser MCP clients send no `Origin` header and are always permitted.
+const MCP_ALLOWED_ORIGINS_ENV: &str = "ENFORME_MCP_ALLOWED_ORIGINS";
+
+/// Parse the comma-separated `Origin` allowlist from the environment, dropping
+/// blank entries. Returns an empty vec when the var is unset or all-blank.
+fn allowed_origins_from_env() -> Vec<String> {
+    env::var(MCP_ALLOWED_ORIGINS_ENV)
+        .ok()
+        .map(|raw| {
+            raw.split(',')
+                .map(str::trim)
+                .filter(|entry| !entry.is_empty())
+                .map(str::to_owned)
+                .collect()
+        })
+        .unwrap_or_default()
+}
 
 #[derive(Parser)]
 #[command(
@@ -67,12 +92,10 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
 
     let state = Arc::new(ServerState::new());
     let tools = build_tool_registry();
-    let mcp_server = Arc::new(McpServer::new(
-        "dravr-enforme",
-        env!("CARGO_PKG_VERSION"),
-        tools,
-        state,
-    ));
+    let mcp_server = Arc::new(
+        McpServer::new("dravr-enforme", env!("CARGO_PKG_VERSION"), tools, state)
+            .with_allowed_origins(allowed_origins_from_env()),
+    );
 
     match cli.command {
         Some(Command::Serve { host, port }) => {
