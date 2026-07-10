@@ -120,3 +120,59 @@ fn enforme_error_is_debug() {
     let debug_str = format!("{err:?}");
     assert!(debug_str.contains("ProviderError"));
 }
+
+#[test]
+fn from_http_status_401_maps_to_credentials_expired() {
+    let err = EnformeError::from_http_status(401, "whoop", "user-1", None, "unauthorized");
+    assert!(matches!(
+        err,
+        EnformeError::CredentialsExpired { user_id, provider }
+            if user_id == "user-1" && provider == "whoop"
+    ));
+}
+
+#[test]
+fn from_http_status_403_maps_to_credentials_expired() {
+    let err = EnformeError::from_http_status(403, "whoop", "user-1", None, "forbidden");
+    assert!(matches!(err, EnformeError::CredentialsExpired { .. }));
+}
+
+#[test]
+fn from_http_status_429_maps_to_rate_limited_with_retry_after() {
+    let err = EnformeError::from_http_status(429, "whoop", "user-1", Some(120), "slow down");
+    assert!(matches!(
+        err,
+        EnformeError::RateLimited { provider, retry_after_secs }
+            if provider == "whoop" && retry_after_secs == 120
+    ));
+}
+
+#[test]
+fn from_http_status_429_defaults_retry_after_to_60() {
+    let err = EnformeError::from_http_status(429, "whoop", "user-1", None, "");
+    assert!(matches!(
+        err,
+        EnformeError::RateLimited {
+            retry_after_secs: 60,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn from_http_status_500_maps_to_provider_error_with_status_and_body() {
+    let err = EnformeError::from_http_status(500, "whoop", "user-1", None, "internal error");
+    let text = err.to_string();
+    assert!(text.contains("HTTP 500"));
+    assert!(text.contains("internal error"));
+    assert!(text.contains("whoop"));
+}
+
+#[test]
+fn from_http_status_truncates_long_bodies_to_200_chars() {
+    let body = "x".repeat(5000);
+    let err = EnformeError::from_http_status(502, "whoop", "user-1", None, &body);
+    let text = err.to_string();
+    assert!(text.contains(&"x".repeat(200)));
+    assert!(!text.contains(&"x".repeat(201)));
+}

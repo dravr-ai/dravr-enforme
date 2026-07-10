@@ -117,4 +117,37 @@ impl EnformeError {
             message: message.into(),
         }
     }
+
+    /// Classify an HTTP error status from a provider API into a structured error.
+    ///
+    /// `401`/`403` map to [`Self::CredentialsExpired`] so the orchestrator can
+    /// refresh and retry, `429` maps to [`Self::RateLimited`] (defaulting to a
+    /// 60s wait when the provider sends no `Retry-After`), and anything else is
+    /// a [`Self::ProviderError`] carrying the status and a body snippet.
+    #[must_use]
+    pub fn from_http_status(
+        status: u16,
+        provider: impl Into<String>,
+        user_id: impl Into<String>,
+        retry_after_secs: Option<u64>,
+        body: &str,
+    ) -> Self {
+        match status {
+            401 | 403 => Self::CredentialsExpired {
+                user_id: user_id.into(),
+                provider: provider.into(),
+            },
+            429 => Self::RateLimited {
+                provider: provider.into(),
+                retry_after_secs: retry_after_secs.unwrap_or(60),
+            },
+            _ => {
+                let snippet: String = body.chars().take(200).collect();
+                Self::ProviderError {
+                    provider: provider.into(),
+                    message: format!("HTTP {status}: {snippet}"),
+                }
+            }
+        }
+    }
 }

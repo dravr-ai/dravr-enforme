@@ -8,6 +8,7 @@ use std::slice;
 
 use tracing::{info, instrument, warn};
 
+use super::resolve_data_source_id;
 use crate::error::EnformeResult;
 use crate::models::connection::ProviderCredentials;
 use crate::traits::sync_provider::{DataType, SyncProvider};
@@ -27,8 +28,20 @@ pub async fn backfill_user(
 ) -> EnformeResult<BackfillResult> {
     let mut result = BackfillResult::default();
 
+    let data_source_id = resolve_data_source_id(deps, user_id, provider.name()).await?;
+
     for data_type in provider.supported_data_types() {
-        match backfill_data_type(deps, provider, creds, user_id, *data_type, max_pages).await {
+        match backfill_data_type(
+            deps,
+            provider,
+            creds,
+            user_id,
+            &data_source_id,
+            *data_type,
+            max_pages,
+        )
+        .await
+        {
             Ok(count) => {
                 info!(
                     user_id,
@@ -57,11 +70,15 @@ pub async fn backfill_user(
 }
 
 /// Backfill a single data type with pagination.
+///
+/// Fetched records are re-stamped with `data_source_id` before storage,
+/// mirroring the orchestrator's sync path.
 async fn backfill_data_type(
     deps: &SyncDeps,
     provider: &dyn SyncProvider,
     creds: &ProviderCredentials,
     user_id: &str,
+    data_source_id: &str,
     data_type: DataType,
     max_pages: u32,
 ) -> EnformeResult<u64> {
@@ -83,7 +100,10 @@ async fn backfill_data_type(
 
         match data_type {
             DataType::Sleep => {
-                let batch = provider.fetch_sleep(creds, cursor.as_ref()).await?;
+                let mut batch = provider.fetch_sleep(creds, cursor.as_ref()).await?;
+                for record in &mut batch.records {
+                    data_source_id.clone_into(&mut record.data_source_id);
+                }
                 let count = deps.sleep.store_sleep_sessions(&batch.records).await?;
                 total += count;
                 deps.cursors.update_cursor(&batch.cursor).await?;
@@ -93,7 +113,10 @@ async fn backfill_data_type(
                 cursor = Some(batch.cursor);
             }
             DataType::Recovery => {
-                let batch = provider.fetch_recovery(creds, cursor.as_ref()).await?;
+                let mut batch = provider.fetch_recovery(creds, cursor.as_ref()).await?;
+                for record in &mut batch.records {
+                    data_source_id.clone_into(&mut record.data_source_id);
+                }
                 let count = deps.recovery.store_recovery_metrics(&batch.records).await?;
                 total += count;
                 deps.cursors.update_cursor(&batch.cursor).await?;
@@ -103,7 +126,10 @@ async fn backfill_data_type(
                 cursor = Some(batch.cursor);
             }
             DataType::Health => {
-                let batch = provider.fetch_health(creds, cursor.as_ref()).await?;
+                let mut batch = provider.fetch_health(creds, cursor.as_ref()).await?;
+                for record in &mut batch.records {
+                    data_source_id.clone_into(&mut record.data_source_id);
+                }
                 let count = deps.health.store_health_snapshots(&batch.records).await?;
                 total += count;
                 deps.cursors.update_cursor(&batch.cursor).await?;
@@ -117,7 +143,7 @@ async fn backfill_data_type(
                 for metric_batch in &batch.records {
                     total += deps
                         .time_series
-                        .store_continuous_metrics("default", slice::from_ref(metric_batch))
+                        .store_continuous_metrics(data_source_id, slice::from_ref(metric_batch))
                         .await?;
                 }
                 deps.cursors.update_cursor(&batch.cursor).await?;

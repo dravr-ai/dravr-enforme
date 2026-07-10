@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.1.41] — 2026-07-10
+
+### Fixed
+
+- **Sync writes no longer violate store foreign keys.** The orchestrator (and
+  `backfill_user`) now upsert a per-user `DataSource` via `DataSourceStore`
+  and re-stamp every fetched sleep/recovery/health record with the returned
+  id before storage. Providers' hardcoded `{provider}-default` placeholder
+  ids violated `data_source_id` foreign keys on the platform store, so no
+  WHOOP/Garmin/Strava health record ever persisted. Continuous-metric batches
+  now also carry the real data-source id instead of the `"default"` literal.
+- **WHOOP fetches check HTTP status before deserializing.** A 401/403 error
+  body used to fail serde decode and surface as `serialization error`,
+  masking token expiry. Non-success responses now map to structured errors
+  via `EnformeError::from_http_status` (401/403 → `CredentialsExpired`,
+  429 → `RateLimited` honoring `Retry-After`, else `ProviderError` with
+  status + body snippet).
+- **Expired tokens are refreshed during sync.** `sync_user` proactively calls
+  `CredentialStore::refresh_credentials` when the stored token is expired and
+  refreshable, and retries a data type once when a fetch reports
+  `CredentialsExpired` — previously `refresh_credentials` had zero call
+  sites, so a stale token failed every scheduled sync forever.
+- **WHOOP `total_sleep_seconds` now measures sleep, not time in bed.** The
+  value was mapped from `total_in_bed_time_milli`; it is now the sum of
+  light + slow-wave + REM stage durations (new
+  `asleep_seconds_from_stage_millis` helper).
+
 ## [0.1.39] — 2026-06-30
 
 ### Changed

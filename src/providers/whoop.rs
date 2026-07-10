@@ -12,6 +12,7 @@ use dravr_equilibre::{
     ContinuousMetricBatch, StoredHealthMetrics, StoredRecoveryMetrics, StoredSleepSession,
     SyncStatus,
 };
+use http::header::RETRY_AFTER;
 use http::HeaderMap;
 use serde::Deserialize;
 use tracing::instrument;
@@ -38,6 +39,25 @@ const WHOOP_SIGNATURE_HEADER: &str = "x-whoop-signature";
 #[must_use]
 pub fn parse_whoop_date(created_at: &str) -> Option<NaiveDate> {
     NaiveDate::parse_from_str(created_at.get(..10)?, "%Y-%m-%d").ok()
+}
+
+/// Sum per-stage sleep durations (milliseconds) into total asleep seconds.
+///
+/// WHOOP's `stage_summary` reports time in bed separately from the sleep
+/// stages; actual sleep is light + slow-wave + REM, excluding awake time in
+/// bed. Returns `None` when no stage duration is present so an unscored
+/// sleep stays unset instead of reading as zero sleep.
+#[must_use]
+pub fn asleep_seconds_from_stage_millis(
+    light: Option<i64>,
+    slow_wave: Option<i64>,
+    rem: Option<i64>,
+) -> Option<u32> {
+    let stages = [light, slow_wave, rem];
+    if stages.iter().all(Option::is_none) {
+        return None;
+    }
+    Some((stages.iter().flatten().sum::<i64>() / 1000) as u32)
 }
 
 /// WHOOP API v2 provider implementation.
@@ -73,6 +93,35 @@ impl WhoopProvider {
             .bearer_auth(&creds.access_token)
     }
 
+    /// Surface non-success WHOOP responses as structured errors.
+    ///
+    /// Without this check an expired-token 401 body reaches serde and
+    /// masquerades as a serialization failure. 401/403 become
+    /// `CredentialsExpired` so the orchestrator can refresh and retry;
+    /// 429 becomes `RateLimited` honoring `Retry-After`.
+    async fn error_for_status(
+        creds: &ProviderCredentials,
+        response: reqwest::Response,
+    ) -> EnformeResult<reqwest::Response> {
+        let status = response.status();
+        if status.is_success() {
+            return Ok(response);
+        }
+        let retry_after_secs = response
+            .headers()
+            .get(RETRY_AFTER)
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| v.parse::<u64>().ok());
+        let body = response.text().await.unwrap_or_default();
+        Err(EnformeError::from_http_status(
+            status.as_u16(),
+            "whoop",
+            &creds.user_id,
+            retry_after_secs,
+            &body,
+        ))
+    }
+
     /// Parse a WHOOP sleep response into stored sleep sessions.
     fn parse_sleep_response(
         response: &WhoopPaginatedResponse<WhoopSleep>,
@@ -95,8 +144,9 @@ impl WhoopProvider {
                     is_nap: s.nap,
                     start_datetime: start,
                     end_datetime: end,
-                    total_sleep_seconds: stage_summary
-                        .and_then(|sum| sum.in_bed.map(|ms| (ms / 1000) as u32)),
+                    total_sleep_seconds: stage_summary.and_then(|sum| {
+                        asleep_seconds_from_stage_millis(sum.light, sum.slow_wave, sum.rem)
+                    }),
                     deep_sleep_seconds: stage_summary
                         .and_then(|sum| sum.slow_wave.map(|ms| (ms / 1000) as u32)),
                     light_sleep_seconds: stage_summary
@@ -195,10 +245,12 @@ impl SyncProvider for WhoopProvider {
             }
         }
 
-        let response: WhoopPaginatedResponse<WhoopSleep> = request
+        let response = request
             .send()
             .await
-            .map_err(|e| EnformeError::provider("whoop", e.to_string()))?
+            .map_err(|e| EnformeError::provider("whoop", e.to_string()))?;
+        let response: WhoopPaginatedResponse<WhoopSleep> = Self::error_for_status(creds, response)
+            .await?
             .json()
             .await
             .map_err(|e| EnformeError::serialization(e.to_string()))?;
@@ -234,13 +286,16 @@ impl SyncProvider for WhoopProvider {
             }
         }
 
-        let response: WhoopPaginatedResponse<WhoopRecovery> = request
+        let response = request
             .send()
             .await
-            .map_err(|e| EnformeError::provider("whoop", e.to_string()))?
-            .json()
-            .await
-            .map_err(|e| EnformeError::serialization(e.to_string()))?;
+            .map_err(|e| EnformeError::provider("whoop", e.to_string()))?;
+        let response: WhoopPaginatedResponse<WhoopRecovery> =
+            Self::error_for_status(creds, response)
+                .await?
+                .json()
+                .await
+                .map_err(|e| EnformeError::serialization(e.to_string()))?;
 
         let metrics = Self::parse_recovery_response(&response, &creds.user_id, "whoop-default");
 
@@ -267,10 +322,12 @@ impl SyncProvider for WhoopProvider {
     ) -> EnformeResult<SyncBatch<StoredHealthMetrics>> {
         let request = self.authorized_get("/user/measurement/body", creds);
 
-        let response: WhoopBodyMeasurement = request
+        let response = request
             .send()
             .await
-            .map_err(|e| EnformeError::provider("whoop", e.to_string()))?
+            .map_err(|e| EnformeError::provider("whoop", e.to_string()))?;
+        let response: WhoopBodyMeasurement = Self::error_for_status(creds, response)
+            .await?
             .json()
             .await
             .map_err(|e| EnformeError::serialization(e.to_string()))?;
@@ -420,8 +477,6 @@ struct WhoopSleepScore {
 /// milliseconds; the wire names carry the `total_*_time_milli` form.
 #[derive(Debug, Deserialize)]
 struct WhoopSleepStageSummary {
-    #[serde(rename = "total_in_bed_time_milli")]
-    in_bed: Option<i64>,
     #[serde(rename = "total_slow_wave_sleep_time_milli")]
     slow_wave: Option<i64>,
     #[serde(rename = "total_light_sleep_time_milli")]

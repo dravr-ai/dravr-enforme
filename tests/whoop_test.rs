@@ -87,3 +87,39 @@ mod whoop_tests {
         assert_eq!(parse_whoop_date("2026-07-0é9T00:00:00Z"), None);
     }
 }
+
+#[cfg(feature = "provider-whoop")]
+mod whoop_sleep_duration_tests {
+    use dravr_enforme::providers::whoop::asleep_seconds_from_stage_millis;
+
+    #[test]
+    fn asleep_seconds_sums_light_slow_wave_and_rem() {
+        // 3h light + 1h slow-wave + 1.5h REM = 5.5h asleep
+        let secs =
+            asleep_seconds_from_stage_millis(Some(3 * 3_600_000), Some(3_600_000), Some(5_400_000));
+        assert_eq!(secs, Some(19_800));
+    }
+
+    #[test]
+    fn asleep_seconds_excludes_in_bed_awake_time() {
+        // 8h in bed with 1h awake must NOT read as 8h asleep; only the
+        // stage durations count (7h here).
+        let secs = asleep_seconds_from_stage_millis(
+            Some(4 * 3_600_000),
+            Some(3_600_000),
+            Some(2 * 3_600_000),
+        );
+        assert_eq!(secs, Some(7 * 3600));
+    }
+
+    #[test]
+    fn asleep_seconds_handles_partial_stages() {
+        let secs = asleep_seconds_from_stage_millis(Some(3_600_000), None, None);
+        assert_eq!(secs, Some(3600));
+    }
+
+    #[test]
+    fn asleep_seconds_none_when_no_stage_data() {
+        assert_eq!(asleep_seconds_from_stage_millis(None, None, None), None);
+    }
+}

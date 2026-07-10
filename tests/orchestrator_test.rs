@@ -344,3 +344,299 @@ fn mock_on_connect_hook_is_send_sync() {
     fn assert_send_sync<T: Send + Sync>() {}
     assert_send_sync::<MockHook>();
 }
+
+// ============================================================================
+// Data-source stamping and credential-refresh behavior
+// ============================================================================
+
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Mutex;
+
+use chrono::{Duration, Utc};
+use dravr_equilibre::SyncStatus;
+
+fn sample_sleep_session(user_id: &str) -> StoredSleepSession {
+    StoredSleepSession {
+        id: "sleep-1".to_owned(),
+        user_id: user_id.to_owned(),
+        data_source_id: "mock-default".to_owned(),
+        is_nap: false,
+        start_datetime: Utc::now() - Duration::hours(8),
+        end_datetime: Utc::now(),
+        total_sleep_seconds: Some(7 * 3600),
+        deep_sleep_seconds: None,
+        light_sleep_seconds: None,
+        rem_sleep_seconds: None,
+        awake_seconds: None,
+        sleep_efficiency: None,
+        avg_heart_rate: None,
+        min_heart_rate: None,
+        avg_hrv: None,
+        sleep_score: None,
+        stages: Vec::new(),
+        source_name: "mock".to_owned(),
+    }
+}
+
+/// Sleep store that captures stored sessions for assertions.
+struct CapturingSleepStore {
+    stored: Arc<Mutex<Vec<StoredSleepSession>>>,
+}
+#[async_trait]
+impl SleepStore for CapturingSleepStore {
+    async fn store_sleep_sessions(&self, sessions: &[StoredSleepSession]) -> EnformeResult<u64> {
+        self.stored.lock().unwrap().extend_from_slice(sessions);
+        Ok(sessions.len() as u64)
+    }
+    async fn delete_sleep_session(&self, _id: &str, _policy: &DeletionPolicy) -> EnformeResult<()> {
+        Ok(())
+    }
+}
+
+/// Data source store returning a fixed persisted id, as the platform's
+/// upsert does once the row exists.
+struct FixedDataSourceStore;
+#[async_trait]
+impl DataSourceStore for FixedDataSourceStore {
+    async fn upsert_data_source(&self, _source: &DataSource) -> EnformeResult<String> {
+        Ok("ds-real-1".to_owned())
+    }
+}
+
+/// Credential store handing out a stale token until refreshed.
+struct StaleCredentialStore {
+    refresh_calls: Arc<AtomicUsize>,
+    stored_token_expired: bool,
+    refresh_yields_fresh_token: bool,
+}
+#[async_trait]
+impl CredentialStore for StaleCredentialStore {
+    async fn get_credentials(
+        &self,
+        user_id: &str,
+        provider: &str,
+    ) -> EnformeResult<Option<ProviderCredentials>> {
+        Ok(Some(ProviderCredentials {
+            access_token: "stale-token".to_owned(),
+            refresh_token: Some("refresh-token".to_owned()),
+            expires_at: self
+                .stored_token_expired
+                .then(|| Utc::now() - Duration::hours(1)),
+            scopes: vec![],
+            user_id: user_id.to_owned(),
+            provider: provider.to_owned(),
+        }))
+    }
+    async fn refresh_credentials(
+        &self,
+        user_id: &str,
+        provider: &str,
+    ) -> EnformeResult<ProviderCredentials> {
+        self.refresh_calls.fetch_add(1, Ordering::SeqCst);
+        let token = if self.refresh_yields_fresh_token {
+            "fresh-token"
+        } else {
+            "stale-token"
+        };
+        Ok(ProviderCredentials {
+            access_token: token.to_owned(),
+            refresh_token: Some("refresh-token".to_owned()),
+            expires_at: Some(Utc::now() + Duration::hours(1)),
+            scopes: vec![],
+            user_id: user_id.to_owned(),
+            provider: provider.to_owned(),
+        })
+    }
+}
+
+/// Provider that rejects stale tokens the way a live API's 401 does after
+/// status-code mapping, and returns one sleep record otherwise.
+struct AuthAwareProvider;
+#[async_trait]
+impl SyncProvider for AuthAwareProvider {
+    fn name(&self) -> &'static str {
+        "mock"
+    }
+    fn supported_data_types(&self) -> &[DataType] {
+        &[DataType::Sleep]
+    }
+    async fn fetch_sleep(
+        &self,
+        creds: &ProviderCredentials,
+        _cursor: Option<&SyncCursor>,
+    ) -> EnformeResult<SyncBatch<StoredSleepSession>> {
+        if creds.access_token == "stale-token" {
+            return Err(dravr_enforme::EnformeError::CredentialsExpired {
+                user_id: creds.user_id.clone(),
+                provider: "mock".to_owned(),
+            });
+        }
+        let mut cursor = SyncCursor::new(&creds.user_id, "mock", "sleep");
+        cursor.records_synced = 1;
+        Ok(SyncBatch {
+            records: vec![sample_sleep_session(&creds.user_id)],
+            cursor,
+            has_more: false,
+        })
+    }
+    async fn fetch_recovery(
+        &self,
+        creds: &ProviderCredentials,
+        _cursor: Option<&SyncCursor>,
+    ) -> EnformeResult<SyncBatch<StoredRecoveryMetrics>> {
+        Ok(SyncBatch::empty(SyncCursor::new(
+            &creds.user_id,
+            "mock",
+            "recovery",
+        )))
+    }
+    async fn fetch_health(
+        &self,
+        creds: &ProviderCredentials,
+        _cursor: Option<&SyncCursor>,
+    ) -> EnformeResult<SyncBatch<StoredHealthMetrics>> {
+        Ok(SyncBatch::empty(SyncCursor::new(
+            &creds.user_id,
+            "mock",
+            "health",
+        )))
+    }
+    async fn fetch_continuous(
+        &self,
+        creds: &ProviderCredentials,
+        _cursor: Option<&SyncCursor>,
+    ) -> EnformeResult<SyncBatch<ContinuousMetricBatch>> {
+        Ok(SyncBatch::empty(SyncCursor::new(
+            &creds.user_id,
+            "mock",
+            "continuous",
+        )))
+    }
+    async fn on_connected(
+        &self,
+        _creds: &ProviderCredentials,
+        _webhook_url: &str,
+    ) -> EnformeResult<()> {
+        Ok(())
+    }
+    async fn on_disconnected(&self, _creds: &ProviderCredentials) -> EnformeResult<()> {
+        Ok(())
+    }
+    fn webhook_config(&self) -> Option<WebhookConfig> {
+        None
+    }
+    async fn validate_webhook(
+        &self,
+        _headers: &http::HeaderMap,
+        _body: &[u8],
+    ) -> EnformeResult<bool> {
+        Ok(true)
+    }
+    async fn parse_webhook(&self, _body: &[u8]) -> EnformeResult<Vec<WebhookEvent>> {
+        Ok(vec![])
+    }
+}
+
+struct RefreshScenario {
+    orchestrator: SyncOrchestrator,
+    stored: Arc<Mutex<Vec<StoredSleepSession>>>,
+    refresh_calls: Arc<AtomicUsize>,
+}
+
+fn build_refresh_scenario(
+    stored_token_expired: bool,
+    refresh_yields_fresh_token: bool,
+) -> RefreshScenario {
+    let stored = Arc::new(Mutex::new(Vec::new()));
+    let refresh_calls = Arc::new(AtomicUsize::new(0));
+    let deps = Arc::new(SyncDeps {
+        sleep: Arc::new(CapturingSleepStore {
+            stored: Arc::clone(&stored),
+        }),
+        recovery: Arc::new(MockRecoveryStore),
+        health: Arc::new(MockHealthStore),
+        time_series: Arc::new(MockTimeSeriesStore),
+        data_sources: Arc::new(FixedDataSourceStore),
+        cursors: Arc::new(MockCursorStore),
+        credentials: Arc::new(StaleCredentialStore {
+            refresh_calls: Arc::clone(&refresh_calls),
+            stored_token_expired,
+            refresh_yields_fresh_token,
+        }),
+        connections: Arc::new(MockConnectionStore),
+    });
+    let mut providers: HashMap<String, Box<dyn SyncProvider>> = HashMap::new();
+    providers.insert("mock".to_owned(), Box::new(AuthAwareProvider));
+    RefreshScenario {
+        orchestrator: SyncOrchestrator::new(deps, providers, SyncConfig::default()),
+        stored,
+        refresh_calls,
+    }
+}
+
+#[tokio::test]
+async fn sync_stamps_records_with_upserted_data_source_id() {
+    let scenario = build_refresh_scenario(true, true);
+    let result = scenario
+        .orchestrator
+        .sync_user("user-1", "mock")
+        .await
+        .unwrap();
+    assert_eq!(result.records_created, 1);
+
+    let stored = scenario.stored.lock().unwrap();
+    assert_eq!(stored.len(), 1);
+    // The provider stamped "mock-default"; the orchestrator must replace it
+    // with the persisted data-source id so store-side foreign keys resolve.
+    assert_eq!(stored[0].data_source_id, "ds-real-1");
+}
+
+#[tokio::test]
+async fn sync_refreshes_and_retries_when_fetch_reports_expiry() {
+    // Stored expiry looks valid, so no proactive refresh happens; the
+    // provider's CredentialsExpired must trigger refresh-and-retry-once.
+    let scenario = build_refresh_scenario(false, true);
+    let result = scenario
+        .orchestrator
+        .sync_user("user-1", "mock")
+        .await
+        .unwrap();
+
+    assert_eq!(scenario.refresh_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(result.records_created, 1);
+    assert_eq!(result.records_errored, 0);
+    assert!(matches!(result.status, SyncStatus::Completed));
+}
+
+#[tokio::test]
+async fn sync_proactively_refreshes_expired_stored_token() {
+    // Stored token is already past expiry: refresh happens before any fetch.
+    let scenario = build_refresh_scenario(true, true);
+    let result = scenario
+        .orchestrator
+        .sync_user("user-1", "mock")
+        .await
+        .unwrap();
+
+    assert_eq!(scenario.refresh_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(result.records_created, 1);
+    assert!(matches!(result.status, SyncStatus::Completed));
+}
+
+#[tokio::test]
+async fn sync_refreshes_only_once_when_token_stays_invalid() {
+    // Refresh keeps returning a rejected token: the sync must fail the data
+    // type after a single retry instead of refreshing in a loop.
+    let scenario = build_refresh_scenario(false, false);
+    let result = scenario
+        .orchestrator
+        .sync_user("user-1", "mock")
+        .await
+        .unwrap();
+
+    assert_eq!(scenario.refresh_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(result.records_created, 0);
+    assert_eq!(result.records_errored, 1);
+    assert!(matches!(result.status, SyncStatus::Failed));
+    assert!(scenario.stored.lock().unwrap().is_empty());
+}

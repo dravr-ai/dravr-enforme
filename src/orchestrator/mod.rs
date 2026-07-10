@@ -16,7 +16,7 @@ use std::fmt;
 use std::slice;
 use std::sync::Arc;
 
-use dravr_equilibre::SyncResult;
+use dravr_equilibre::{DataSource, DeviceType, SyncResult};
 use tokio::task::JoinHandle;
 use tracing::{info, instrument, warn};
 
@@ -75,7 +75,7 @@ impl SyncOrchestrator {
             .get(provider)
             .ok_or_else(|| EnformeError::provider(provider, "provider not registered"))?;
 
-        let creds = self
+        let mut creds = self
             .deps
             .credentials
             .get_credentials(user_id, provider)
@@ -84,6 +84,21 @@ impl SyncOrchestrator {
                 user_id: user_id.to_owned(),
                 provider: provider.to_owned(),
             })?;
+
+        // At most one refresh per sync: proactive when the stored token is
+        // already expired, otherwise reactive when a fetch reports expiry.
+        let mut refreshed = if creds.is_expired() && creds.can_refresh() {
+            creds = self
+                .deps
+                .credentials
+                .refresh_credentials(user_id, provider)
+                .await?;
+            true
+        } else {
+            false
+        };
+
+        let data_source_id = resolve_data_source_id(&self.deps, user_id, provider).await?;
 
         let mut total_created: u32 = 0;
         let total_updated: u32 = 0;
@@ -97,10 +112,41 @@ impl SyncOrchestrator {
                 .get_cursor(user_id, provider, data_type.as_str())
                 .await?;
 
-            match self
-                .sync_data_type(provider_impl.as_ref(), &creds, *data_type, cursor.as_ref())
-                .await
-            {
+            let mut outcome = self
+                .sync_data_type(
+                    provider_impl.as_ref(),
+                    &creds,
+                    &data_source_id,
+                    *data_type,
+                    cursor.as_ref(),
+                )
+                .await;
+
+            if !refreshed && matches!(outcome, Err(EnformeError::CredentialsExpired { .. })) {
+                refreshed = true;
+                match self
+                    .deps
+                    .credentials
+                    .refresh_credentials(user_id, provider)
+                    .await
+                {
+                    Ok(new_creds) => {
+                        creds = new_creds;
+                        outcome = self
+                            .sync_data_type(
+                                provider_impl.as_ref(),
+                                &creds,
+                                &data_source_id,
+                                *data_type,
+                                cursor.as_ref(),
+                            )
+                            .await;
+                    }
+                    Err(e) => outcome = Err(e),
+                }
+            }
+
+            match outcome {
                 Ok(count) => total_created += count,
                 Err(e) => {
                     warn!(
@@ -214,22 +260,33 @@ impl SyncOrchestrator {
     }
 
     /// Sync a single data type for a user, returning records written.
+    ///
+    /// Fetched records are re-stamped with `data_source_id` (the persisted
+    /// per-user data source) before storage so store-side foreign keys
+    /// resolve; providers only stamp a `{provider}-default` placeholder.
     async fn sync_data_type(
         &self,
         provider: &dyn SyncProvider,
         creds: &ProviderCredentials,
+        data_source_id: &str,
         data_type: DataType,
         cursor: Option<&SyncCursor>,
     ) -> EnformeResult<u32> {
         match data_type {
             DataType::Sleep => {
-                let batch = provider.fetch_sleep(creds, cursor).await?;
+                let mut batch = provider.fetch_sleep(creds, cursor).await?;
+                for record in &mut batch.records {
+                    data_source_id.clone_into(&mut record.data_source_id);
+                }
                 let count = self.deps.sleep.store_sleep_sessions(&batch.records).await?;
                 self.deps.cursors.update_cursor(&batch.cursor).await?;
                 Ok(count as u32)
             }
             DataType::Recovery => {
-                let batch = provider.fetch_recovery(creds, cursor).await?;
+                let mut batch = provider.fetch_recovery(creds, cursor).await?;
+                for record in &mut batch.records {
+                    data_source_id.clone_into(&mut record.data_source_id);
+                }
                 let count = self
                     .deps
                     .recovery
@@ -239,7 +296,10 @@ impl SyncOrchestrator {
                 Ok(count as u32)
             }
             DataType::Health => {
-                let batch = provider.fetch_health(creds, cursor).await?;
+                let mut batch = provider.fetch_health(creds, cursor).await?;
+                for record in &mut batch.records {
+                    data_source_id.clone_into(&mut record.data_source_id);
+                }
                 let count = self
                     .deps
                     .health
@@ -255,7 +315,7 @@ impl SyncOrchestrator {
                     total += self
                         .deps
                         .time_series
-                        .store_continuous_metrics("default", slice::from_ref(metric_batch))
+                        .store_continuous_metrics(data_source_id, slice::from_ref(metric_batch))
                         .await?;
                 }
                 self.deps.cursors.update_cursor(&batch.cursor).await?;
@@ -263,6 +323,30 @@ impl SyncOrchestrator {
             }
         }
     }
+}
+
+/// Resolve the persisted data-source id for a user+provider connection.
+///
+/// Upserts the per-user [`DataSource`] row and returns its id. Records are
+/// stamped with this id before storage — without it, providers' placeholder
+/// `{provider}-default` ids violate store-side foreign keys and no record
+/// ever persists.
+pub(crate) async fn resolve_data_source_id(
+    deps: &SyncDeps,
+    user_id: &str,
+    provider: &str,
+) -> EnformeResult<String> {
+    let source = DataSource {
+        id: String::new(),
+        user_id: user_id.to_owned(),
+        provider: provider.to_owned(),
+        device_model: None,
+        software_version: None,
+        source: None,
+        device_type: DeviceType::Unknown,
+        original_source_name: Some(provider.to_owned()),
+    };
+    deps.data_sources.upsert_data_source(&source).await
 }
 
 impl fmt::Debug for SyncOrchestrator {
