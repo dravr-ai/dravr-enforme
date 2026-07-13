@@ -576,8 +576,8 @@ dependencies = [
 
 [[package]]
 name = "dravr-sciotte"
-version = "0.7.14"
-source = "git+https://github.com/dravr-ai/dravr-sciotte.git?tag=v0.7.14#575195bf3c418c26800e1e812aa081c400ef6531"
+version = "0.7.15"
+source = "git+https://github.com/dravr-ai/dravr-sciotte.git?tag=v0.7.15#1260b991903e2d266c81ac43f3bf8100bfdec774"
 dependencies = [
  "async-trait",
  "base64",
