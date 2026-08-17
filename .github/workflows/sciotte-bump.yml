@@ -1,0 +1,231 @@
+# ABOUTME: Bumps this crate's pinned dravr-sciotte tag when sciotte releases, then cuts a release
+# ABOUTME: Middle hop of sciotte -> enforme -> dravr-platform; the platform cannot bump sciotte alone
+#
+# SPDX-License-Identifier: MIT OR Apache-2.0
+# Copyright (c) 2026 dravr.ai
+#
+# Why this repo is in the path at all. src/providers/{garmin,strava}.rs scrape through
+# sciotte's browser engine, so this crate pins dravr-sciotte. dravr-platform pins it too,
+# and also depends on this crate — a diamond. The platform hard-fails any build where a
+# dravr-* crate resolves to two versions (`cargo tree -d`, ci-backend.yml), so bumping
+# sciotte only on the platform side produces a duplicate and cannot merge. That is why
+# the platform's pin sat on v0.8.0 through five sciotte releases: not neglect, a blocked
+# edge with nothing reporting the block.
+#
+# So the chain runs through here. sciotte releases, this bumps and releases, and the
+# platform then moves both pins together — taking its sciotte version from what this
+# crate pins, so the two arms of the diamond converge by construction rather than by
+# two workflows happening to agree.
+
+name: "Sciotte: Bump and Release"
+
+on:
+  repository_dispatch:
+    types: [sciotte-released]
+  schedule:
+    # Weekly safety net so a missed or failed dispatch still gets integrated.
+    - cron: "0 12 * * 1"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "sciotte tag to integrate (defaults to the latest release)"
+        required: false
+        type: string
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: sciotte-bump
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  resolve:
+    name: Resolve target version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      needed: ${{ steps.v.outputs.needed }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve and verify the target tag
+        id: v
+        env:
+          GH_TOKEN: ${{ secrets.DRAVR_DISPATCH_TOKEN }}
+          PAYLOAD_VERSION: ${{ github.event.client_payload.version }}
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          VERSION="${PAYLOAD_VERSION:-${INPUT_VERSION:-}}"
+          if [ -z "${VERSION}" ]; then
+            VERSION=$(gh api repos/dravr-ai/dravr-sciotte/releases/latest -q .tag_name)
+          fi
+          if [ -z "${VERSION}" ]; then
+            echo "::error::could not resolve a dravr-sciotte version to integrate"
+            exit 1
+          fi
+          # Confirm against the API rather than trusting the dispatch payload: this
+          # chain pushes to main and cuts a release off the back of it.
+          if ! gh api "repos/dravr-ai/dravr-sciotte/releases/tags/${VERSION}" -q .tag_name >/dev/null 2>&1; then
+            echo "::error::${VERSION} is not a published dravr-sciotte release"
+            exit 1
+          fi
+
+          PINNED=$(grep -oE 'dravr-sciotte = \{ git = "[^"]+", tag = "v[0-9]+\.[0-9]+\.[0-9]+"' Cargo.toml \
+                   | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+          if [ -z "${PINNED}" ]; then
+            echo "::error::could not read the pinned dravr-sciotte tag from Cargo.toml — the line shape changed"
+            exit 1
+          fi
+
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          if [ "${PINNED}" = "${VERSION}" ]; then
+            echo "needed=false" >> "$GITHUB_OUTPUT"
+            echo "pin is already ${VERSION} — nothing to integrate"
+          else
+            echo "needed=true" >> "$GITHUB_OUTPUT"
+            echo "integrating ${PINNED} -> ${VERSION}"
+          fi
+
+  bump:
+    name: Bump the pin on a branch
+    runs-on: ubuntu-latest
+    needs: resolve
+    if: needs.resolve.outputs.needed == 'true'
+    outputs:
+      branch: ${{ steps.push.outputs.branch }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: dtolnay/rust-toolchain@1.96.0
+
+      - name: Configure auth for private git deps
+        run: git config --global url."https://x-access-token:${{ secrets.DRAVR_PRIVATE_DEPS_TOKEN }}@github.com/".insteadOf "https://github.com/"
+
+      - name: Rewrite the pin and re-resolve the lockfile
+        env:
+          VERSION: ${{ needs.resolve.outputs.version }}
+        run: |
+          set -euo pipefail
+          sed -i -E "s|(dravr-sciotte = \{ git = \"[^\"]+\", tag = \")v[0-9]+\.[0-9]+\.[0-9]+\"|\1${VERSION}\"|" Cargo.toml
+          TAG=$(grep 'dravr-sciotte = { git' Cargo.toml | grep -oE 'tag = "v[0-9]+\.[0-9]+\.[0-9]+"' | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+')
+          if [ "${TAG}" != "${VERSION}" ]; then
+            echo "::error::Cargo.toml pins dravr-sciotte at ${TAG:-<unparseable>} after the rewrite, expected ${VERSION}"
+            exit 1
+          fi
+
+          cargo update -p dravr-sciotte
+
+          # `cargo update -p` resolves the new tag but leaves the previous entry behind
+          # when anything still references it, so the lock can end up carrying two
+          # versions of the same crate. Downstream that is a hard failure, and it is far
+          # cheaper to catch here than in the platform's duplicate gate twenty minutes
+          # later. Assert the lock converged on exactly the requested tag.
+          COUNT=$(grep -c '^name = "dravr-sciotte"' Cargo.lock || true)
+          if [ "${COUNT}" != "1" ]; then
+            echo "::error::Cargo.lock carries ${COUNT} dravr-sciotte entries; expected exactly 1"
+            grep -A2 '^name = "dravr-sciotte"' Cargo.lock || true
+            exit 1
+          fi
+          if ! grep -q "tag=${VERSION}#" Cargo.lock; then
+            echo "::error::Cargo.lock did not move to ${VERSION}"
+            grep -A2 '^name = "dravr-sciotte"' Cargo.lock || true
+            exit 1
+          fi
+          echo "lock converged on ${VERSION}"
+
+      - name: Push the branch and dispatch CI onto it
+        id: push
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.resolve.outputs.version }}
+        run: |
+          set -euo pipefail
+          # feature/ because ci.yml listens on main, claude/** and feature/**. The
+          # explicit dispatch below is what actually starts it — a GITHUB_TOKEN push
+          # never triggers a workflow — but an accepted prefix keeps the branch
+          # consistent with how every other branch in this repo is built.
+          BRANCH="feature/sciotte-${VERSION}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "${BRANCH}"
+          git add Cargo.toml Cargo.lock
+          git commit -m "chore(sciotte): bump dravr-sciotte to ${VERSION}"
+          git push --force-with-lease origin "${BRANCH}"
+          echo "branch=${BRANCH}" >> "$GITHUB_OUTPUT"
+          gh workflow run ci.yml --ref "${BRANCH}"
+
+  gate:
+    name: Wait for CI on the bump branch
+    runs-on: ubuntu-latest
+    needs: [resolve, bump]
+    timeout-minutes: 45
+    steps:
+      - name: Poll until CI reaches a terminal status
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BRANCH: ${{ needs.bump.outputs.branch }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -uo pipefail
+          DEADLINE=$(( $(date +%s) + 35 * 60 ))
+          while :; do
+            LINE=$(gh run list --workflow ci.yml --branch "${BRANCH}" --limit 1 \
+                     --json status,conclusion \
+                     -q '.[0] | "\(.status) \(.conclusion // "-")"' 2>/dev/null || true)
+            STATUS="${LINE%% *}"; CONCL="${LINE##* }"
+            if [ -n "${LINE}" ] && [ "${STATUS}" = "completed" ]; then
+              # cancelled and skipped are not green — a cancelled run validated nothing.
+              if [ "${CONCL}" = "success" ]; then
+                echo "CI green on ${BRANCH}"
+                break
+              fi
+              echo "::error::CI concluded ${CONCL} on ${BRANCH} — the branch is left in place for inspection"
+              exit 1
+            fi
+            if [ "$(date +%s)" -ge "${DEADLINE}" ]; then
+              echo "::error::timed out waiting for CI on ${BRANCH} (last status: ${STATUS:-not-started})"
+              exit 1
+            fi
+            echo "waiting on ci.yml (${STATUS:-not-started})"
+            sleep 60
+          done
+
+  merge-and-release:
+    name: Squash onto main and cut a release
+    runs-on: ubuntu-latest
+    needs: [resolve, bump, gate]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: main
+
+      - name: Squash merge and delete the branch
+        env:
+          BRANCH: ${{ needs.bump.outputs.branch }}
+          VERSION: ${{ needs.resolve.outputs.version }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin "${BRANCH}"
+          git merge --squash "origin/${BRANCH}"
+          git commit -m "chore(sciotte): integrate dravr-sciotte ${VERSION}"
+          git push origin main
+          git push origin --delete "${BRANCH}"
+
+      - name: Cut the release the platform will pin
+        # The platform pins this crate by tag, so the bump only becomes reachable
+        # downstream once a release exists. release.yml's notify job carries the chain
+        # on to dravr-platform from there.
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh workflow run release.yml --ref main -f bump=patch

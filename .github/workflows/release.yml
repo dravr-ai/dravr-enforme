@@ -335,3 +335,41 @@ jobs:
           git add Formula/dravr-enforme.rb
           git commit -m "chore: bump dravr-enforme to v${VERSION}"
           git push
+
+  # ---------------------------------------------------------------------------
+  # Carry the chain on to dravr-platform
+  # ---------------------------------------------------------------------------
+  notify-platform:
+    name: Announce the release to dravr-platform
+    # After build, so the platform never starts integrating a version whose
+    # artefacts failed to publish.
+    needs: [version, build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v${{ needs.version.outputs.version }}
+
+      - name: Dispatch enforme-released
+        env:
+          GH_TOKEN: ${{ secrets.DRAVR_DISPATCH_TOKEN }}
+          VERSION: v${{ needs.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          # Ship the sciotte tag this release pins alongside our own version. The
+          # platform pins sciotte directly as well as through this crate, and its CI
+          # hard-fails when a dravr-* crate resolves to two versions — so it needs to
+          # move both pins in one commit, and this manifest is the authority on which
+          # sciotte version they must both land on.
+          SCIOTTE=$(grep -oE 'dravr-sciotte = \{ git = "[^"]+", tag = "v[0-9]+\.[0-9]+\.[0-9]+"' Cargo.toml \
+                    | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+          if [ -z "${SCIOTTE}" ]; then
+            echo "::error::could not read the pinned dravr-sciotte tag at ${VERSION} — the platform would have nothing to converge on"
+            exit 1
+          fi
+          echo "announcing enforme ${VERSION} pinning sciotte ${SCIOTTE}"
+          gh api -X POST repos/dravr-ai/dravr-platform/dispatches \
+            -f event_type=enforme-released \
+            -F client_payload[version]="${VERSION}" \
+            -F client_payload[sciotte]="${SCIOTTE}" \
+            -F client_payload[sha]="${GITHUB_SHA}"
