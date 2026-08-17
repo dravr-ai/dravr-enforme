@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.1.46] — 2026-08-17
+
+### Fixed
+
+- fix: repair the SessionStart bootstrap guard for an empty .build
+
+### Other
+
+- chore(sciotte): integrate dravr-sciotte v0.8.6
+- ci(sciotte): bump and release when sciotte does
+- chore(deps): bump dravr-tronc to 0.6.2 and .build to a02d456
+- chore(register): ledger + weekly phase review
+- chore(register): point at dravr-carnet, the dravr-family register
+
+
+
 ## [0.1.45] — 2026-07-16
 
 
