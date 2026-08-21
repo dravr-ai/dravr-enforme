@@ -115,7 +115,7 @@ hex = { version = "0.4", optional = true }
 axum = { version = "0.8", default-features = false, optional = true }
 
 # Optional: sciotte browser scraping for Garmin/Strava (private repo)
-dravr-sciotte = { git = "https://github.com/dravr-ai/dravr-sciotte.git", tag = "v0.8.6", optional = true }
+dravr-sciotte = { git = "https://github.com/dravr-ai/dravr-sciotte.git", tag = "v0.9.0", optional = true }
 
 [features]
 default = []
