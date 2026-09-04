@@ -27,7 +27,7 @@ path = "src/main.rs"
 [dependencies]
 dravr-enforme = { path = "../..", version = "0.1.50" }
 dravr-enforme-mcp = { path = "../dravr-enforme-mcp", version = "0.1.50" }
-dravr-tronc = { version = "0.11.0", features = ["notifications"] }
+dravr-tronc = { version = "1.0.0", features = ["notifications"] }
 axum = "0.8"
 clap = { version = "4", features = ["derive"] }
 serde_json = "1"
