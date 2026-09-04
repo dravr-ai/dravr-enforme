@@ -540,10 +540,9 @@ dependencies = [
 
 [[package]]
 name = "dravr-equilibre"
-version = "0.2.4"
-source = "git+https://github.com/dravr-ai/dravr-equilibre.git?tag=v0.2.4#3222556294cdfeded2ef6f1316b476c3e5963f6a"
+version = "0.2.5"
+source = "git+https://github.com/dravr-ai/dravr-equilibre.git?tag=v0.2.5#ba9941b31c175c5fda5e91f3b4615ffd556b4407"
 dependencies = [
- "async-trait",
  "chrono",
  "serde",
  "serde_json",
