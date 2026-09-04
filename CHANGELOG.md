@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.50] — 2026-09-04
+
+### Other
+
+- chore(sciotte): integrate dravr-sciotte v0.9.2
+
+
+
 ## [0.1.49] — 2026-09-04
 
 
