@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.48] — 2026-09-04
+
+### Other
+
+- chore(deps): take dravr-equilibre v0.2.5
+
+
+
 ## [0.1.47] — 2026-08-21
 
 ### Other
