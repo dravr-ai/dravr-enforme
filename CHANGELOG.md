@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.1.51] — 2026-09-05
+
+### Changed
+
+- chore(deps): bump dravr-equilibre v0.2.5 -> v0.2.6, which adds JsonSchema
+  derives to the stored health types. Enforme itself needs nothing from those
+  derives; this exists so the platform can move to v0.2.6 at all. Cargo does
+  not unify differing git tags, so with enforme holding v0.2.5 the platform
+  bumping alone put two dravr-equilibre copies in one lock — the duplicate
+  the dravr-* graph check rejects. Both pins have to move together.
+- chore(deps): dravr-tronc 0.11.0 -> 1.0.0, already on HEAD and untagged
+  until now; this release carries it.
+
 ## [0.1.50] — 2026-09-04
 
 ### Other
