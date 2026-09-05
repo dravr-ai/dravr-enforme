@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.1.52] — 2026-09-05
+
+### Changed
+
+- chore(deps): dravr-equilibre v0.2.6 -> v0.2.7, which adds the DataSource
+  JsonSchema derive v0.2.6 missed. Enforme needs nothing from it; this exists
+  so the platform can move, because cargo does not unify differing git tags
+  and both pins have to travel together.
+
 ## [0.1.51] — 2026-09-05
 
 ### Changed
