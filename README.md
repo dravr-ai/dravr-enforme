@@ -3,18 +3,18 @@
 [![CI](https://github.com/dravr-ai/dravr-enforme/actions/workflows/ci.yml/badge.svg)](https://github.com/dravr-ai/dravr-enforme/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
-Background sync service that pulls health data from wearable providers and persists it locally, so AI coaches can query historical trends instantly without live API calls.
+Background sync service that pulls health data from wearable providers and persists it locally, so AI agents can query historical trends instantly without live API calls.
 
 ## Why
 
-Without enforme, every coach question like "How was my sleep last night?" triggers a live API call to WHOOP/Garmin. No historical data is stored — trend analysis requires N API calls, rate limits become a problem, and data is discarded after each response.
+Without enforme, every agent question like "How was my sleep last night?" triggers a live API call to WHOOP/Garmin. No historical data is stored — trend analysis requires N API calls, rate limits become a problem, and data is discarded after each response.
 
-With enforme running, health data is synced continuously in the background. Coaches read from the local database: instant response, 30+ days of history, cross-provider comparisons, no API calls at query time.
+With enforme running, health data is synced continuously in the background. Agents read from the local database: instant response, 30+ days of history, cross-provider comparisons, no API calls at query time.
 
 ```
 enforme syncs providers → DB (sleep, recovery, health, time-series)
                               ↓
-              coach asks "how's my recovery trending?"
+              agent asks "how's my recovery trending?"
                               ↓
               reads from DB → passes to dravr-cageux → analysis → response
 ```
